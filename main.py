@@ -48,15 +48,48 @@ for key in MODULES.keys():
         df = pd.read_excel(file_path)
         processed_dfs.append((key, df))
 
-        print(f"--- Модуль {key} ---")
-        print("Столбцы после process_module:", df.columns.tolist())
-        print("Размер после process_module:", df.shape)
-    else:
-        print(f"Пропущен модуль {key}")
-
 combined = combine_processed_files(processed_dfs)
-print("Столбцы в combined:", combined.columns)
-print("Размер combined:", combined.shape)
+
+# Сохранение объединённого файла ДО удаления дубликатов
+pre_dedup_path = os.path.join(PROCESSED_FOLDER, "до_удаления_дубликатов.xlsx")
+combined.to_excel(pre_dedup_path, index=False)
+log(f"Промежуточный файл сохранён: {pre_dedup_path}")
+
+# --- Шаг 4. Обработка дубликатов по 'УЗ' и 'ФИО' ---
+
+
+def smart_merge(df):
+    log("Удаление дубликатов с переносом значений")
+
+    if "УЗ" not in df.columns or "ФИО" not in df.columns:
+        log("Не найдены ключевые столбцы 'УЗ' или 'ФИО', пропуск удаления дубликатов")
+        return df
+
+    key_columns = ["УЗ", "ФИО"]
+    grouped = df.groupby(key_columns, as_index=False)
+
+    merged_rows = []
+
+    for _, group in grouped:
+        base = group.iloc[0].copy()
+
+        for _, row in group.iloc[1:].iterrows():
+            for col in df.columns:
+                if col in key_columns:
+                    continue
+                base_val = base[col]
+                new_val = row[col]
+
+                if pd.isna(base_val) or base_val == 0 or base_val == "":
+                    if not pd.isna(new_val) and new_val != 0 and new_val != "":
+                        base[col] = new_val
+
+        merged_rows.append(base)
+
+    result_df = pd.DataFrame(merged_rows)
+    log(f"Дубликаты объединены. Итоговая форма: {result_df.shape}")
+    return result_df
+
 
 # Финальное удаление дубликатов
 final_df = smart_merge(combined)

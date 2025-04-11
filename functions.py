@@ -1,108 +1,129 @@
 import os
 import pandas as pd
-import logging
-from functools import wraps
+from datetime import datetime
+import os
+import pandas as pd
+from openpyxl import load_workbook
+from openpyxl.worksheet.table import Table
+
+LOG_FILE = None
+
+
+def prepare_directories(dirs):
+    for directory in dirs:
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+
+
+def setup_logging(log_dir):
+    global LOG_FILE
+    now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    LOG_FILE = os.path.join(log_dir, f"log_{now}.txt")
+    with open(LOG_FILE, "w", encoding="utf-8") as f:
+        f.write(f"Лог запущен: {now}\n")
+    return LOG_FILE
 
 
 def log(message):
     print(message)
-    logging.info(message)
+    if LOG_FILE:
+        with open(LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(message + "\n")
 
 
-def trace(func):
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        log(f"Вызов функции: {func.__name__}")
-        result = func(*args, **kwargs)
-        return result
-    return wrapper
-
-
-@trace
-def prepare_directories(paths):
-    for path in paths:
-        os.makedirs(path, exist_ok=True)
-
-
-@trace
-def setup_logging(log_folder):
-    log_file = os.path.join(log_folder, "pipeline.log")
-    logging.basicConfig(
-        filename=log_file,
-        level=logging.INFO,
-        format="%(asctime)s - %(levelname)s - %(message)s"
-    )
-
-
-@trace
 def process_module(input_folder, processed_folder, key, config):
+    file_name = f"Опросный лист {key}.xlsx"
+    file_path = os.path.join(input_folder, file_name)
+
+    if not os.path.exists(file_path):
+        log(f"Файл не найден и пропущен: {file_path}")
+        return None
+
     dfs = []
-    for table_name in config["table_names"]:
-        filename = f"Опросный лист {key}.xlsx"
-        file_path = os.path.join(input_folder, filename)
 
-        if not os.path.exists(file_path):
-            log(f"Файл не найден и пропущен: {file_path}")
-            continue
+    try:
+        wb = load_workbook(file_path, data_only=True)
 
-        try:
-            df = pd.read_excel(file_path, sheet_name=table_name)
-        except ValueError:
-            log(f"Лист с именем '{table_name}' не найден в файле {file_path}")
-            continue
+        # Перебираем таблицы по заданным именам
+        for table_name in config["table_names"]:
+            found = False
+            for sheet in wb.worksheets:
+                for tbl in sheet._tables.values() if isinstance(sheet._tables, dict) else sheet._tables:
+                    tbl_obj = tbl if isinstance(
+                        tbl, Table) else sheet.tables[tbl]
 
-        df["Модуль"] = key
-        dfs.append(df)
+                    if tbl_obj.name == table_name:
+                        # Получение диапазона таблицы
+                        data_range = sheet[tbl_obj.ref]
+                        headers = [cell.value for cell in data_range[0]]
+                        rows = [[cell.value for cell in row]
+                                for row in data_range[1:]]
 
-    if not dfs:
+                        df = pd.DataFrame(rows, columns=headers)
+
+                        # Удаление ненужных столбцов
+                        for col in config["columns_to_remove"]:
+                            if col in df.columns:
+                                df.drop(columns=[col], inplace=True)
+
+                        df["Модуль"] = key
+                        dfs.append(df)
+                        found = True
+                        break
+
+                if found:
+                    break
+
+            if not found:
+                log(f"Таблица '{table_name}' не найдена в файле: {file_path}")
+
+    except Exception as e:
+        log(f"Ошибка при обработке файла {file_path}: {e}")
+        return None
+
+    if dfs:
+        result_df = pd.concat(dfs, ignore_index=True)
+        return result_df
+    else:
         log(f"Нет данных для модуля: {key}")
         return None
 
-    df = pd.concat(dfs, ignore_index=True)
 
-    # Удаляем ненужные столбцы, если они есть
-    columns_to_remove = config.get("columns_to_remove", [])
-    df = df.drop(
-        columns=[col for col in columns_to_remove if col in df.columns], errors="ignore")
-
-    print(f"Столбцы после удаления: {df.columns}")
-    print(f"Размер после объединения: {df.shape}")
-
-    return df
+def combine_processed_files(processed_data):
+    dfs = [df for _, df in processed_data]
+    if dfs:
+        return pd.concat(dfs, ignore_index=True)
+    return pd.DataFrame()
 
 
-@trace
-def combine_processed_files(processed_dfs):
-    all_data = []
-    for key, df in processed_dfs:
-        df["Модуль"] = key
-        all_data.append(df)
-    combined = pd.concat(all_data, ignore_index=True)
-    print("Комбинированная таблица создана.")
-
-    return combined
-
-
-@trace
 def smart_merge(df):
-    key_column = "УЗ|ФИО"
+    log("Удаление дубликатов с переносом значений")
 
-    if key_column not in df.columns:
-        fio = df.get("ФИО")
-        account = df.get("Учетная запись")
+    if "УЗ" not in df.columns or "ФИО" not in df.columns:
+        log("Не найдены ключевые столбцы 'УЗ' или 'ФИО', пропуск удаления дубликатов")
+        return df
 
-        if fio is not None and account is not None:
-            df[key_column] = df["Учетная запись"].astype(
-                str) + "|" + df["ФИО"].astype(str)
-        else:
-            raise KeyError(
-                "Нет столбца 'УЗ|ФИО' и невозможно создать его — отсутствуют 'ФИО' или 'Учетная запись'")
+    key_columns = ["УЗ", "ФИО"]
+    grouped = df.groupby(key_columns, as_index=False)
 
-    df = df.sort_values(key_column)
-    before = df.shape[0]
-    df = df.drop_duplicates(subset=key_column, keep="first")
-    after = df.shape[0]
+    merged_rows = []
 
-    log(
-        f"Удалено дубликатов по '{key_column}'. Итоговая форма: ({after}, {df.shape[1]})")
-    return df
+    for _, group in grouped:
+        base = group.iloc[0].copy()
+
+        for _, row in group.iloc[1:].iterrows():
+            for col in df.columns:
+                if col in key_columns:
+                    continue
+                base_val = base[col]
+                new_val = row[col]
+
+                if pd.isna(base_val) or base_val == 0 or base_val == "":
+                    if not pd.isna(new_val) and new_val != 0 and new_val != "":
+                        base[col] = new_val
+
+        merged_rows.append(base)
+
+    result_df = pd.DataFrame(merged_rows)
+    log(f"Дубликаты объединены. Итоговая форма: {result_df.shape}")
+    return result_df
