@@ -2,34 +2,14 @@ import os
 import logging
 import pandas as pd
 from openpyxl import load_workbook
-from functools import wraps
 
 logger = None
 
-RENAME_MAP = {
-    "ФИО сотрудника": "ФИО",
-    "Сотрудник": "ФИО",
-    "Пользователь": "УЗ",
-    "Учетная запись сотрудника": "УЗ",
-    "Учетная запись в MS AD": "УЗ",
-    "Учетная запись MS AD": "УЗ",
-    "Учетная запись в службе каталогов": "УЗ",
-    "Электронная почта*": "Электронная почта",
-    "Мобильный телефон*": "Мобильный телефон"
-}
-
-
-def log_decorator(func):
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        log(f"Выполнение: {func.__name__}")
-        result = func(*args, **kwargs)
-        log(f"Завершено: {func.__name__}")
-        return result
-    return wrapper
-
 
 def setup_logging(log_folder):
+    """
+    Настраивает логирование в указанный файл внутри папки log_folder.
+    """
     global logger
     os.makedirs(log_folder, exist_ok=True)
     log_file = os.path.join(log_folder, "log.txt")
@@ -40,19 +20,38 @@ def setup_logging(log_folder):
 
 
 def log(message):
+    """
+    Печатает и логирует сообщение.
+    """
     print(message)
     if logger:
         logger.info(message)
 
 
+def log_decorator(func):
+    """
+    Декоратор для автоматического логирования вызова функции и её аргументов.
+    """
+    def wrapper(*args, **kwargs):
+        log(f"Вызов функции: {func.__name__} с аргументами: {args} {kwargs}")
+        return func(*args, **kwargs)
+    return wrapper
+
+
 @log_decorator
 def prepare_directories(folders):
+    """
+    Создаёт указанные директории, если они не существуют.
+    """
     for folder in folders:
         os.makedirs(folder, exist_ok=True)
 
 
 @log_decorator
 def load_named_table(file_path, table_name):
+    """
+    Загружает таблицу с указанным именем из Excel-файла.
+    """
     wb = load_workbook(filename=file_path, data_only=True)
     for sheet in wb.worksheets:
         for tbl in sheet._tables.values():
@@ -67,13 +66,21 @@ def load_named_table(file_path, table_name):
 
 
 @log_decorator
-def rename_standard_columns(df):
-    log(f"Переименование столбцов по стандартной карте: {RENAME_MAP}")
-    return df.rename(columns=RENAME_MAP)
+def rename_standard_columns(df, table_name, rename_map):
+    """
+    Переименовывает стандартные столбцы в DataFrame по предоставленной карте.
+    """
+    log(
+        f"Переименование столбцов по стандартной карте для таблицы {table_name}: {rename_map}")
+    return df.rename(columns=rename_map)
 
 
 @log_decorator
-def process_module(input_folder, processed_folder, key, config):
+def process_module(input_folder, processed_folder, key, config, rename_map):
+    """
+    Обрабатывает модуль: загружает указанные таблицы, переименовывает столбцы,
+    удаляет лишние и добавляет информацию о модуле.
+    """
     file_name = f"Опросный лист {key}.xlsx"
     file_path = os.path.join(input_folder, file_name)
 
@@ -85,12 +92,16 @@ def process_module(input_folder, processed_folder, key, config):
     for table_name in config["table_names"]:
         try:
             df = load_named_table(file_path, table_name)
-            df = rename_standard_columns(df)
+            df = rename_standard_columns(df, table_name, rename_map)
+
             if config.get("columns_to_remove"):
                 df = df.drop(columns=[
-                             col for col in config["columns_to_remove"] if col in df.columns], errors='ignore')
+                    col for col in config["columns_to_remove"] if col in df.columns
+                ], errors='ignore')
+
             df["Модуль"] = key
             df_list.append(df)
+
         except Exception as e:
             log(f"Ошибка при чтении таблицы '{table_name}' в файле '{file_path}': {e}")
 
@@ -103,22 +114,28 @@ def process_module(input_folder, processed_folder, key, config):
 
 @log_decorator
 def combine_processed_files(dataframes):
-    return pd.concat([df for _, df in dataframes], ignore_index=True)
+    """
+    Объединяет список DataFrame в один.
+    """
+    combined = pd.concat([df for _, df in dataframes], ignore_index=True)
+    return combined
 
 
 @log_decorator
 def smart_merge(df):
+    """
+    Удаляет дубликаты по 'УЗ' и 'ФИО', переносит значения из дубликатов в первую строку.
+    Также удаляет строки, у которых 'УЗ' и 'ФИО' пустые.
+    """
     log("Удаление дубликатов с переносом значений")
 
     if not {'УЗ', 'ФИО'}.issubset(df.columns):
         log("Не найдены ключевые столбцы 'УЗ' или 'ФИО', пропуск удаления дубликатов")
         return df
 
-    # Удаляем строки, где и 'УЗ', и 'ФИО' отсутствуют
-    df = df[~(df["УЗ"].isna() | (df["УЗ"] == "")) | ~
-            (df["ФИО"].isna() | (df["ФИО"] == ""))]
-    df = df.dropna(subset=["УЗ", "ФИО"], how="all")
-
+    df = df.copy()
+    # удаляем строки с пустыми 'УЗ' и 'ФИО'
+    df = df[~(df["УЗ"].isna() & df["ФИО"].isna())]
     df["_key"] = df["УЗ"].astype(str) + "|" + df["ФИО"].astype(str)
     grouped = df.groupby("_key", sort=False)
 
@@ -127,7 +144,9 @@ def smart_merge(df):
         base = group.iloc[0].copy()
         for _, row in group.iloc[1:].iterrows():
             for col in df.columns:
-                if col not in ["_key", "УЗ", "ФИО"] and (pd.isna(base[col]) or base[col] == 0 or base[col] == ""):
+                if col not in ["_key", "УЗ", "ФИО"] and (
+                    pd.isna(base[col]) or base[col] == 0 or base[col] == ""
+                ):
                     base[col] = row[col]
         merged_rows.append(base)
 
