@@ -1,34 +1,60 @@
 import os
-import pandas as pd
-from datetime import datetime
-import os
+import logging
 import pandas as pd
 from openpyxl import load_workbook
-from openpyxl.worksheet.table import Table
 
-LOG_FILE = None
-
-
-def prepare_directories(dirs):
-    for directory in dirs:
-        if not os.path.exists(directory):
-            os.makedirs(directory)
+logger = None
 
 
-def setup_logging(log_dir):
-    global LOG_FILE
-    now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    LOG_FILE = os.path.join(log_dir, f"log_{now}.txt")
-    with open(LOG_FILE, "w", encoding="utf-8") as f:
-        f.write(f"Лог запущен: {now}\n")
-    return LOG_FILE
+def setup_logging(log_folder):
+    global logger
+    os.makedirs(log_folder, exist_ok=True)
+    log_file = os.path.join(log_folder, "log.txt")
+    logging.basicConfig(filename=log_file, level=logging.INFO,
+                        format="%(asctime)s - %(message)s")
+    logger = logging.getLogger()
+    return log_file
 
 
 def log(message):
     print(message)
-    if LOG_FILE:
-        with open(LOG_FILE, "a", encoding="utf-8") as f:
-            f.write(message + "\n")
+    if logger:
+        logger.info(message)
+
+
+def prepare_directories(folders):
+    for folder in folders:
+        os.makedirs(folder, exist_ok=True)
+
+
+def load_named_table(file_path, table_name):
+    wb = load_workbook(filename=file_path, data_only=True)
+    for sheet in wb.worksheets:
+        for tbl in sheet._tables.values():
+            if tbl.name == table_name:
+                data = sheet[tbl.ref]
+                headers = [cell.value for cell in data[0]]
+                rows = [[cell.value for cell in row] for row in data[1:]]
+                df = pd.DataFrame(rows, columns=headers)
+                return df
+    raise ValueError(
+        f"Таблица с именем '{table_name}' не найдена в файле '{file_path}'.")
+
+
+def rename_standard_columns(df):
+    rename_map = {
+        "ФИО сотрудника": "ФИО",
+
+
+        "Учетная запись сотрудника": "УЗ",
+        "Учетная запись в MS AD": "УЗ",
+        "Учетная запись MS AD": "УЗ",
+        "Учетная запись в службе каталогов": "УЗ",
+        "Электронная почта*": "Электронная почта",
+        "Мобильный телефон*": "Мобильный телефон"
+    }
+    log(f"Переименование столбцов по стандартной карте: {rename_map}")
+    return df.rename(columns=rename_map)
 
 
 def process_module(input_folder, processed_folder, key, config):
@@ -39,91 +65,55 @@ def process_module(input_folder, processed_folder, key, config):
         log(f"Файл не найден и пропущен: {file_path}")
         return None
 
-    dfs = []
+    df_list = []
+    for table_name in config["table_names"]:
+        try:
+            df = load_named_table(file_path, table_name)
+            df = rename_standard_columns(df)
 
-    try:
-        wb = load_workbook(file_path, data_only=True)
+            if config.get("columns_to_remove"):
+                df = df.drop(columns=[
+                             col for col in config["columns_to_remove"] if col in df.columns], errors='ignore')
 
-        # Перебираем таблицы по заданным именам
-        for table_name in config["table_names"]:
-            found = False
-            for sheet in wb.worksheets:
-                for tbl in sheet._tables.values() if isinstance(sheet._tables, dict) else sheet._tables:
-                    tbl_obj = tbl if isinstance(
-                        tbl, Table) else sheet.tables[tbl]
+            df["Модуль"] = key
+            df_list.append(df)
 
-                    if tbl_obj.name == table_name:
-                        # Получение диапазона таблицы
-                        data_range = sheet[tbl_obj.ref]
-                        headers = [cell.value for cell in data_range[0]]
-                        rows = [[cell.value for cell in row]
-                                for row in data_range[1:]]
+        except Exception as e:
+            log(f"Ошибка при чтении таблицы '{table_name}' в файле '{file_path}': {e}")
 
-                        df = pd.DataFrame(rows, columns=headers)
-
-                        # Удаление ненужных столбцов
-                        for col in config["columns_to_remove"]:
-                            if col in df.columns:
-                                df.drop(columns=[col], inplace=True)
-
-                        df["Модуль"] = key
-                        dfs.append(df)
-                        found = True
-                        break
-
-                if found:
-                    break
-
-            if not found:
-                log(f"Таблица '{table_name}' не найдена в файле: {file_path}")
-
-    except Exception as e:
-        log(f"Ошибка при обработке файла {file_path}: {e}")
-        return None
-
-    if dfs:
-        result_df = pd.concat(dfs, ignore_index=True)
-        return result_df
+    if df_list:
+        return pd.concat(df_list, ignore_index=True)
     else:
         log(f"Нет данных для модуля: {key}")
         return None
 
 
-def combine_processed_files(processed_data):
-    dfs = [df for _, df in processed_data]
-    if dfs:
-        return pd.concat(dfs, ignore_index=True)
-    return pd.DataFrame()
+def combine_processed_files(dataframes):
+    combined = pd.concat([df for _, df in dataframes], ignore_index=True)
+    return combined
 
 
 def smart_merge(df):
     log("Удаление дубликатов с переносом значений")
 
-    if "УЗ" not in df.columns or "ФИО" not in df.columns:
+    if not {'УЗ', 'ФИО'}.issubset(df.columns):
         log("Не найдены ключевые столбцы 'УЗ' или 'ФИО', пропуск удаления дубликатов")
         return df
 
-    key_columns = ["УЗ", "ФИО"]
-    grouped = df.groupby(key_columns, as_index=False)
+    df["_key"] = df["УЗ"].astype(str) + "|" + df["ФИО"].astype(str)
+    grouped = df.groupby("_key", sort=False)
 
     merged_rows = []
-
     for _, group in grouped:
         base = group.iloc[0].copy()
-
         for _, row in group.iloc[1:].iterrows():
             for col in df.columns:
-                if col in key_columns:
-                    continue
-                base_val = base[col]
-                new_val = row[col]
-
-                if pd.isna(base_val) or base_val == 0 or base_val == "":
-                    if not pd.isna(new_val) and new_val != 0 and new_val != "":
-                        base[col] = new_val
-
+                if col not in ["_key", "Учетная запись", "ФИО"] and (
+                    pd.isna(base[col]) or base[col] == 0 or base[col] == ""
+                ):
+                    base[col] = row[col]
         merged_rows.append(base)
 
-    result_df = pd.DataFrame(merged_rows)
-    log(f"Дубликаты объединены. Итоговая форма: {result_df.shape}")
+    result_df = pd.DataFrame(merged_rows).drop(columns=["_key"])
+    log(f"Удалено дубликатов по 'УЗ|ФИО'. Итоговая форма: {result_df.shape}")
     return result_df
