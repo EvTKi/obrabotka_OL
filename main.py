@@ -15,6 +15,7 @@ INPUT_FOLDER = r"C:\Users\geg\Desktop\Новая папка\Обрабатыва
 PROCESSED_FOLDER = os.path.join(os.path.dirname(INPUT_FOLDER), "Обработанные")
 LOG_FOLDER = os.path.join(os.path.dirname(INPUT_FOLDER), "log")
 set_log_folder(LOG_FOLDER)
+
 RENAME_MAP = {
     "ФИО сотрудника": "ФИО",
     "Сотрудник": "ФИО",
