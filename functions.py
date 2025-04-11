@@ -2,6 +2,10 @@ import os
 import logging
 import pandas as pd
 from openpyxl import load_workbook
+import numpy as np
+from functools import wraps
+from datetime import datetime
+
 
 logger = None
 
@@ -28,13 +32,32 @@ def log(message):
         logger.info(message)
 
 
+LOG_FOLDER = None  # будет задан из main
+
+
+def set_log_folder(folder_path):
+    global LOG_FOLDER
+    LOG_FOLDER = folder_path
+
+
 def log_decorator(func):
-    """
-    Декоратор для автоматического логирования вызова функции и её аргументов.
-    """
+    @wraps(func)
     def wrapper(*args, **kwargs):
-        log(f"Вызов функции: {func.__name__} с аргументами: {args} {kwargs}")
-        return func(*args, **kwargs)
+        if LOG_FOLDER is None:
+            raise ValueError(
+                "LOG_FOLDER не установлен. Используйте set_log_folder(path).")
+
+        timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+        log_filename = f"{func.__name__}_{timestamp}.log"
+        log_path = os.path.join(LOG_FOLDER, log_filename)
+
+        os.makedirs(LOG_FOLDER, exist_ok=True)
+        with open(log_path, 'w', encoding='utf-8') as f:
+            f.write(
+                f"Вызов функции: {func.__name__} с аргументами: {args} {kwargs}\n")
+            result = func(*args, **kwargs)
+            f.write(f"Результат: {result}\n")
+        return result
     return wrapper
 
 
@@ -122,34 +145,36 @@ def combine_processed_files(dataframes):
 
 
 @log_decorator
-def smart_merge(df):
+def smart_merge(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Удаляет дубликаты по 'УЗ' и 'ФИО', переносит значения из дубликатов в первую строку.
-    Также удаляет строки, у которых 'УЗ' и 'ФИО' пустые.
+    Объединяет строки по комбинации 'УЗ' и 'ФИО' с сохранением первых непустых значений.
+
+    Этапы:
+    1. Удаление строк, где оба поля 'ФИО' и 'УЗ' пустые.
+    2. Создание уникального ключа на основе 'УЗ|ФИО'.
+    3. Группировка по ключу и объединение строк с приоритетом непустых значений.
+    4. Очистка служебного ключа.
+
+    :param df: DataFrame с колонками 'ФИО' и 'УЗ'
+    :return: Обработанный DataFrame без дубликатов
     """
-    log("Удаление дубликатов с переносом значений")
-
-    if not {'УЗ', 'ФИО'}.issubset(df.columns):
-        log("Не найдены ключевые столбцы 'УЗ' или 'ФИО', пропуск удаления дубликатов")
-        return df
-
+    # Шаг 1: удаляем строки, где оба поля пустые
     df = df.copy()
-    # удаляем строки с пустыми 'УЗ' и 'ФИО'
-    df = df[~(df["УЗ"].isna() & df["ФИО"].isna())]
+    mask = ~((df["ФИО"].fillna("") == "") & (df["УЗ"].fillna("") == ""))
+    df = df[mask]
+
+    # Шаг 2: создаём ключ для объединения
     df["_key"] = df["УЗ"].astype(str) + "|" + df["ФИО"].astype(str)
-    grouped = df.groupby("_key", sort=False)
 
-    merged_rows = []
-    for _, group in grouped:
-        base = group.iloc[0].copy()
-        for _, row in group.iloc[1:].iterrows():
-            for col in df.columns:
-                if col not in ["_key", "УЗ", "ФИО"] and (
-                    pd.isna(base[col]) or base[col] == 0 or base[col] == ""
-                ):
-                    base[col] = row[col]
-        merged_rows.append(base)
+    print("Удаление дубликатов с переносом значений")
 
-    result_df = pd.DataFrame(merged_rows).drop(columns=["_key"])
-    log(f"Удалено дубликатов по 'УЗ|ФИО'. Итоговая форма: {result_df.shape}")
-    return result_df
+    # Шаг 3: группируем и сохраняем первые непустые значения
+    df = df.groupby("_key").agg(lambda x: x.dropna(
+    ).iloc[0] if x.dropna().any() else np.nan).reset_index(drop=True)
+
+    # Шаг 4: удаляем ключ
+    if "_key" in df.columns:
+        df.drop(columns=["_key"], inplace=True)
+
+    print(f"Удалено дубликатов по 'УЗ|ФИО'. Итоговая форма: {df.shape}")
+    return df

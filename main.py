@@ -1,24 +1,24 @@
 import os
+import pandas as pd
 from functions import (
     prepare_directories,
     setup_logging,
+    log,
     process_module,
     combine_processed_files,
     smart_merge,
-    log
+    set_log_folder
 )
-import pandas as pd
 
-# --- Конфигурация ---
+# --- Константы и конфигурация ---
 INPUT_FOLDER = r"C:\Users\geg\Desktop\Новая папка\Обрабатываемые"
-
-# Эти папки создаются рядом с исходной
 PROCESSED_FOLDER = os.path.join(os.path.dirname(INPUT_FOLDER), "Обработанные")
 LOG_FOLDER = os.path.join(os.path.dirname(INPUT_FOLDER), "log")
-
-# Карта переименования столбцов
+set_log_folder(LOG_FOLDER)
 RENAME_MAP = {
     "ФИО сотрудника": "ФИО",
+    "Сотрудник": "ФИО",
+    "Пользователь": "Учетная запись",
     "Учетная запись сотрудника": "УЗ",
     "Учетная запись в MS AD": "УЗ",
     "Учетная запись MS AD": "УЗ",
@@ -27,33 +27,35 @@ RENAME_MAP = {
     "Мобильный телефон*": "Мобильный телефон"
 }
 
-# Конфигурация модулей
 MODULES = {
     "ОЖ": {
         "table_names": ["ДП", "Рук", "Проч_персон"],
-        "columns_to_remove": ["Столбец1"],
-        "rename_map": RENAME_MAP
+        "columns_to_remove": ["Столбец1"]
     },
     "ЖД": {
         "table_names": ["ЖД"],
-        "columns_to_remove": ["Столбец1"],
-        "rename_map": RENAME_MAP
+        "columns_to_remove": ["Столбец1"]
+    },
+    "ЖТАР": {
+        "table_names": ["ГИД"],
+        "columns_to_remove": ["Столбец1"]
     }
 }
 
-# --- Подготовка директорий и логирования ---
+# --- Подготовка ---
 prepare_directories([INPUT_FOLDER, PROCESSED_FOLDER, LOG_FOLDER])
 setup_logging(LOG_FOLDER)
 
 # --- Обработка каждого модуля ---
 for key, config in MODULES.items():
-    df = process_module(INPUT_FOLDER, PROCESSED_FOLDER, key, config)
+    df = process_module(INPUT_FOLDER, PROCESSED_FOLDER,
+                        key, config, RENAME_MAP)
     if df is not None:
         output_file = os.path.join(PROCESSED_FOLDER, f"Обработано_{key}.xlsx")
         df.to_excel(output_file, index=False)
         log(f"Результат сохранён: {output_file}")
 
-# --- Объединение всех обработанных таблиц ---
+# --- Объединение обработанных таблиц ---
 processed_dfs = []
 for key in MODULES.keys():
     file_path = os.path.join(PROCESSED_FOLDER, f"Обработано_{key}.xlsx")
@@ -68,7 +70,7 @@ pre_dedup_path = os.path.join(PROCESSED_FOLDER, "до_удаления_дубл�
 combined.to_excel(pre_dedup_path, index=False)
 log(f"Промежуточный файл сохранён: {pre_dedup_path}")
 
-# --- Финальная обработка дубликатов ---
+# --- Удаление дубликатов ---
 final_df = smart_merge(combined)
 
 # --- Сохранение финального файла ---
