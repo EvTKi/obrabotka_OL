@@ -112,10 +112,20 @@ def combine_processed_files(dfs):
 
 def smart_merge(df):
     """
-    Удаляет дубликаты по 'ФИО' и 'УЗ', исключает строки, где оба этих поля пустые.
+    Объединяет строки с одинаковыми значениями 'ФИО' и 'УЗ',
+    выбирая первое непустое значение в каждом столбце.
     """
     df = df.copy()
-    df = df[~((df["ФИО"].isna()) & (df["УЗ"].isna()))]
-    df.drop_duplicates(subset=["ФИО", "УЗ"], inplace=True)
-    log(f"После удаления дубликатов осталось строк: {len(df)}")
-    return df
+
+    # Удалим строки, где и ФИО, и УЗ пустые
+    df = df[~((df['ФИО'].isna()) & (df['УЗ'].isna()))]
+
+    # Функция для агрегирования одной группы
+    def pick_first_valid(series):
+        return next((x for x in series if pd.notna(x) and x != ''), None)
+
+    # Группировка и объединение
+    grouped = df.groupby(['ФИО', 'УЗ'], dropna=False).agg(
+        pick_first_valid).reset_index()
+
+    return grouped
