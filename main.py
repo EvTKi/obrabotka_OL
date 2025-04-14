@@ -1,21 +1,28 @@
 import os
+from datetime import datetime
 import pandas as pd
 from functions import (
-    prepare_directories,
-    setup_logging,
-    log,
-    process_module,
-    combine_processed_files,
+    set_log_file_path,
+    load_named_table,
+    load_all_tables_from_file,
+    combine_dataframes,
+    save_dataframe_to_excel,
     smart_merge,
-    set_log_folder
 )
 
-# --- Константы и конфигурация ---
-INPUT_FOLDER = r"C:\Users\geg\Desktop\Новая папка\Обрабатываемые"
-PROCESSED_FOLDER = os.path.join(os.path.dirname(INPUT_FOLDER), "Обработанные")
-LOG_FOLDER = os.path.join(os.path.dirname(INPUT_FOLDER), "log")
-set_log_folder(LOG_FOLDER)
+# --- Константы ---
+INPUT_FOLDER = os.path.join(os.getcwd(), "Обрабатываемые")
+PROCESSED_FOLDER = os.path.join(os.getcwd(), "Обработанные")
+LOG_FOLDER = os.path.join(os.getcwd(), "log")
 
+os.makedirs(PROCESSED_FOLDER, exist_ok=True)
+os.makedirs(LOG_FOLDER, exist_ok=True)
+
+log_filename = f"log {datetime.now().strftime('%Y-%m-%d %H-%M-%S')}.log"
+log_file_path = os.path.join(LOG_FOLDER, log_filename)
+set_log_file_path(log_file_path)
+
+# --- Словарь переименований ---
 RENAME_MAP = {
     "ФИО сотрудника": "ФИО",
     "Сотрудник": "ФИО",
@@ -28,6 +35,7 @@ RENAME_MAP = {
     "Мобильный телефон*": "Мобильный телефон"
 }
 
+# --- Модули ---
 MODULES = {
     "ОЖ": {
         "table_names": ["ДП", "Рук", "Проч_персон"],
@@ -43,38 +51,50 @@ MODULES = {
     }
 }
 
-# --- Подготовка ---
-prepare_directories([INPUT_FOLDER, PROCESSED_FOLDER, LOG_FOLDER])
-setup_logging(LOG_FOLDER)
+# --- Основная обработка ---
+all_dfs = []
 
-# --- Обработка каждого модуля ---
-for key, config in MODULES.items():
-    df = process_module(INPUT_FOLDER, PROCESSED_FOLDER,
-                        key, config, RENAME_MAP)
-    if df is not None:
-        output_file = os.path.join(PROCESSED_FOLDER, f"Обработано_{key}.xlsx")
-        df.to_excel(output_file, index=False)
-        log(f"Результат сохранён: {output_file}")
+for filename in os.listdir(INPUT_FOLDER):
+    if not filename.endswith(".xlsx"):
+        continue
 
-# --- Объединение обработанных таблиц ---
-processed_dfs = []
-for key in MODULES.keys():
-    file_path = os.path.join(PROCESSED_FOLDER, f"Обработано_{key}.xlsx")
-    if os.path.exists(file_path):
-        df = pd.read_excel(file_path)
-        processed_dfs.append((key, df))
+    file_path = os.path.join(INPUT_FOLDER, filename)
+    module_key = next((key for key in MODULES if key in filename), None)
 
-combined = combine_processed_files(processed_dfs)
+    if not module_key:
+        print(f"Модуль не найден для файла: {filename}")
+        continue
 
-# --- Сохранение до удаления дубликатов ---
-pre_dedup_path = os.path.join(PROCESSED_FOLDER, "до_удаления_дубликатов.xlsx")
-combined.to_excel(pre_dedup_path, index=False)
-log(f"Промежуточный файл сохранён: {pre_dedup_path}")
+    table_names = MODULES[module_key]["table_names"]
+    columns_to_remove = MODULES[module_key]["columns_to_remove"]
 
-# --- Удаление дубликатов ---
-final_df = smart_merge(combined)
+    dfs = []
 
-# --- Сохранение финального файла ---
-final_path = os.path.join(PROCESSED_FOLDER, "Общий_итог.xlsx")
-final_df.to_excel(final_path, index=False)
-log(f"Финальный объединённый файл сохранён: {final_path}")
+    for table_name in table_names:
+        df = load_named_table(file_path, table_name)
+        if df is not None:
+            dfs.append(df)
+
+    if not dfs:
+        print(f"Не загружено ни одной таблицы из файла {filename}")
+        continue
+
+    combined_df = combine_dataframes(dfs, columns_to_remove, RENAME_MAP)
+    processed_path = os.path.join(
+        PROCESSED_FOLDER, f"Обработано_{module_key}.xlsx")
+    save_dataframe_to_excel(combined_df, processed_path)
+
+    all_dfs.append(combined_df)
+
+if not all_dfs:
+    print("Нет данных для объединения.")
+    exit()
+
+combined = pd.concat(all_dfs, ignore_index=True)
+intermediate_path = os.path.join(
+    PROCESSED_FOLDER, "до_удаления_дубликатов.xlsx")
+save_dataframe_to_excel(combined, intermediate_path)
+
+final_df = smart_merge(combined, RENAME_MAP)
+final_path = os.path.join(PROCESSED_FOLDER, "итог.xlsx")
+save_dataframe_to_excel(final_df, final_path)

@@ -1,131 +1,118 @@
 import os
+import logging
 import pandas as pd
-import openpyxl
-import datetime
+from openpyxl import load_workbook
 
-# --- Глобальная переменная пути к лог-файлу ---
-_log_file_path = None
+log_file_path = None
 
 
-def set_log_folder(log_folder):
-    """
-    Устанавливает путь к лог-файлу, создавая его в указанной папке с текущей датой и временем.
-    """
-    global _log_file_path
-    timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-    _log_file_path = os.path.join(log_folder, f"log {timestamp}.log")
+def set_log_file_path(path):
+    global log_file_path
+    log_file_path = path
+    logging.basicConfig(
+        filename=log_file_path,
+        level=logging.INFO,
+        format="%(asctime)s - %(levelname)s - %(message)s"
+    )
 
 
-def setup_logging(log_folder):
-    """
-    Создаёт папку логов, если она не существует.
-    """
-    os.makedirs(log_folder, exist_ok=True)
-    log("Логирование инициализировано.")
+def log_decorator(func):
+    def wrapper(*args, **kwargs):
+        try:
+            result = func(*args, **kwargs)
+            return result
+        except Exception as e:
+            msg = f"Ошибка в функции {func.__name__}: {e}"
+            print(msg)
+            if log_file_path:
+                logging.exception(msg)
+            raise
+    return wrapper
 
 
-def log(message):
-    """
-    Записывает сообщение в лог-файл.
-    """
-    if _log_file_path is None:
+@log_decorator
+def load_named_table(filepath, table_name):
+    try:
+        wb = load_workbook(filepath, data_only=True)
+        for sheet in wb.worksheets:
+            for tbl in sheet._tables.values():
+                if tbl.name == table_name:
+                    data = sheet[tbl.ref]
+                    rows = [[cell.value for cell in row] for row in data]
+                    headers = rows[0]
+                    values = rows[1:]
+                    df = pd.DataFrame(values, columns=headers)
+                    print(
+                        f"Загружена таблица '{table_name}' из файла {os.path.basename(filepath)}")
+                    if log_file_path:
+                        logging.info(
+                            f"Загружена таблица '{table_name}' из файла {os.path.basename(filepath)}")
+                    return df
+        raise ValueError(
+            f"Таблица с именем '{table_name}' не найдена в файле {filepath}")
+    except Exception as e:
         raise RuntimeError(
-            "Лог-файл не инициализирован. Вызовите set_log_folder().")
-    timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    full_message = f"[{timestamp}] {message}"
-    with open(_log_file_path, "a", encoding="utf-8") as f:
-        f.write(full_message + "\n")
-    print(full_message)
+            f"Ошибка при загрузке таблицы '{table_name}' из файла {filepath}: {e}")
 
 
-def prepare_directories(folders):
-    """
-    Создаёт необходимые папки.
-    """
-    for folder in folders:
-        os.makedirs(folder, exist_ok=True)
-    log(f"Созданы папки: {folders}")
+@log_decorator
+def load_all_tables_from_file(filepath):
+    tables = []
+    try:
+        wb = load_workbook(filepath, data_only=True)
+        all_table_names = []
+
+        for sheet in wb.worksheets:
+            for tbl in sheet._tables.values():
+                all_table_names.append(tbl.name)
+                data = sheet[tbl.ref]
+                rows = [[cell.value for cell in row] for row in data]
+                headers = rows[0]
+                values = rows[1:]
+                df = pd.DataFrame(values, columns=headers)
+                tables.append(df)
+
+        print(f"В файле '{filepath}' найдены таблицы: \n{all_table_names}")
+        if log_file_path:
+            logging.info(
+                f"В файле '{filepath}' найдены таблицы: \n{all_table_names}")
+        return tables
+    except Exception as e:
+        raise RuntimeError(
+            f"Ошибка при чтении всех таблиц из файла {filepath}: {e}")
 
 
-def load_named_table(file_path, table_name):
-    """
-    Загружает таблицу Excel с указанным именем из любого листа книги.
-    Возвращает DataFrame, если таблица найдена. Иначе — вызывает ошибку.
-    """
-    wb = openpyxl.load_workbook(file_path, data_only=True)
-
-    for sheet_name in wb.sheetnames:
-        sheet = wb[sheet_name]
-        if table_name in sheet.tables:
-            table = sheet.tables[table_name]
-            data = sheet[table.ref]
-
-            rows = [[cell.value for cell in row] for row in data]
-            df = pd.DataFrame(rows[1:], columns=rows[0])
-            return df
-
-    raise KeyError(
-        f"Таблица с именем '{table_name}' не найдена ни на одном листе в файле {file_path}.")
+@log_decorator
+def combine_dataframes(dfs, columns_to_remove, rename_map):
+    combined = pd.concat(dfs, ignore_index=True)
+    combined = combined.copy()
+    combined.drop(columns=[
+                  col for col in columns_to_remove if col in combined.columns], errors='ignore', inplace=True)
+    combined.rename(columns=rename_map, inplace=True)
+    return combined
 
 
-def process_module(input_folder, output_folder, key, config, rename_map):
-    """
-    Загружает и объединяет таблицы одного модуля, удаляет столбцы, переименовывает поля.
-    """
-    combined = []
-    for filename in os.listdir(input_folder):
-        if not filename.endswith(".xlsx") or key not in filename:
-            continue
-
-        file_path = os.path.join(input_folder, filename)
-        for table in config["table_names"]:
-            try:
-                df = load_named_table(file_path, table)
-                df.drop(columns=config["columns_to_remove"],
-                        errors='ignore', inplace=True)
-                df.rename(columns=rename_map, inplace=True)
-                combined.append(df)
-                log(f"Загружена таблица '{table}' из файла {filename}")
-            except Exception as e:
-                log(
-                    f"Ошибка при загрузке таблицы '{table}' из файла {filename}: {e}")
-
-    if not combined:
-        log(f"Нет данных для модуля {key}")
-        return None
-
-    result = pd.concat(combined, ignore_index=True)
-    return result
+@log_decorator
+def save_dataframe_to_excel(df, path):
+    df.to_excel(path, index=False)
+    print(f"Результат сохранён: {path}")
+    if log_file_path:
+        logging.info(f"Результат сохранён: {path}")
 
 
-def combine_processed_files(dfs):
-    """
-    Объединяет предварительно обработанные таблицы из разных модулей.
-    """
-    combined = []
-    for key, df in dfs:
-        df["Модуль"] = key
-        combined.append(df)
-        log(f"Добавлен модуль '{key}' с {len(df)} строками")
-    return pd.concat(combined, ignore_index=True)
+def merge_group(group):
+    return group.apply(lambda col: next((x for x in col if pd.notna(x) and str(x).strip() != ''), None))
 
 
-def smart_merge(df):
-    """
-    Объединяет строки с одинаковыми значениями 'ФИО' и 'УЗ',
-    выбирая первое непустое значение в каждом столбце.
-    """
+@log_decorator
+def smart_merge(df, rename_map):
     df = df.copy()
+    df.rename(columns=rename_map, inplace=True)
+    df.dropna(subset=['ФИО', 'УЗ'], how='all', inplace=True)
 
-    # Удалим строки, где и ФИО, и УЗ пустые
-    df = df[~((df['ФИО'].isna()) & (df['УЗ'].isna()))]
+    def merge_group(group):
+        return next((x for x in group if pd.notna(x) and str(x).strip() != ''), None)
 
-    # Функция для агрегирования одной группы
-    def pick_first_valid(series):
-        return next((x for x in series if pd.notna(x) and x != ''), None)
-
-    # Группировка и объединение
     grouped = df.groupby(['ФИО', 'УЗ'], dropna=False).agg(
-        pick_first_valid).reset_index()
-
+        merge_group).reset_index()
     return grouped
