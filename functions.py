@@ -49,19 +49,23 @@ def prepare_directories(folders):
 
 def load_named_table(file_path, table_name):
     """
-    Загружает таблицу из Excel по имени объекта Table (а не имени листа).
+    Загружает таблицу Excel с указанным именем из любого листа книги.
+    Возвращает DataFrame, если таблица найдена. Иначе — вызывает ошибку.
     """
     wb = openpyxl.load_workbook(file_path, data_only=True)
-    sheet = wb[wb.sheetnames[0]]
-    if table_name not in sheet.tables:
-        raise KeyError(
-            f"Таблица с именем '{table_name}' не найдена в файле {file_path}")
-    table = sheet.tables[table_name]
-    data = sheet[table.ref]
 
-    rows = [[cell.value for cell in row] for row in data]
-    df = pd.DataFrame(rows[1:], columns=rows[0])
-    return df
+    for sheet_name in wb.sheetnames:
+        sheet = wb[sheet_name]
+        if table_name in sheet.tables:
+            table = sheet.tables[table_name]
+            data = sheet[table.ref]
+
+            rows = [[cell.value for cell in row] for row in data]
+            df = pd.DataFrame(rows[1:], columns=rows[0])
+            return df
+
+    raise KeyError(
+        f"Таблица с именем '{table_name}' не найдена ни на одном листе в файле {file_path}.")
 
 
 def process_module(input_folder, output_folder, key, config, rename_map):
