@@ -3,15 +3,31 @@ import logging
 import pandas as pd
 from openpyxl import load_workbook
 
-log_file_path = None
+llog_file_path = None
 
 
 def set_log_file_path(path):
     global log_file_path
     log_file_path = path
+
+
+def set_log_level(level: int):
+    """
+    Устанавливает уровень логирования:
+    1 — только ошибки (ERROR),
+    2 — стандартное логирование (INFO),
+    3 — подробное логирование (DEBUG)
+    """
+    if level == 1:
+        log_level = logging.ERROR
+    elif level == 2:
+        log_level = logging.INFO
+    else:
+        log_level = logging.DEBUG
+
     logging.basicConfig(
         filename=log_file_path,
-        level=logging.INFO,
+        level=log_level,
         format="%(asctime)s - %(levelname)s - %(message)s"
     )
 

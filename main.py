@@ -8,6 +8,7 @@ from functions import (
     combine_dataframes,
     save_dataframe_to_excel,
     smart_merge,
+    set_log_level
 )
 
 # --- Константы ---
@@ -21,6 +22,9 @@ os.makedirs(LOG_FOLDER, exist_ok=True)
 log_filename = f"log {datetime.now().strftime('%Y-%m-%d %H-%M-%S')}.log"
 log_file_path = os.path.join(LOG_FOLDER, log_filename)
 set_log_file_path(log_file_path)
+
+LOGGING_LEVEL = 2  # 1 — ошибки, 2 — INFO, 3 — DEBUG
+set_log_level(LOGGING_LEVEL)
 
 # --- Словарь переименований ---
 RENAME_MAP = {
@@ -51,7 +55,7 @@ MODULES = {
     }
 }
 
-# --- Основная обработка ---
+# --- Основная обработка --
 all_dfs = []
 
 for filename in os.listdir(INPUT_FOLDER):
