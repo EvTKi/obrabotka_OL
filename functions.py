@@ -5,29 +5,28 @@ import pandas as pd
 from openpyxl import load_workbook
 import logging
 from logger_utils import log_decorator
+from functools import lru_cache
+
+
+@lru_cache(maxsize=10)  # Кэширует 10 последних файлов
+def _load_workbook_cached(filepath: str):
+    """Кэшированная версия load_workbook"""
+    return load_workbook(filepath, data_only=True)
 
 
 @log_decorator
-def load_named_table(filepath, table_name, verbose=False):
+def load_named_table(filepath: str, table_name: str) -> pd.DataFrame:
     try:
-        wb = load_workbook(filepath, data_only=True)
+        wb = _load_workbook_cached(filepath)  # Используем кэшированную версию
         for sheet in wb.worksheets:
             for tbl in sheet._tables.values():
                 if tbl.name == table_name:
                     data = sheet[tbl.ref]
                     rows = [[cell.value for cell in row] for row in data]
-                    headers = rows[0]
-                    values = rows[1:]
-                    df = pd.DataFrame(values, columns=headers)
-                    msg = f"Загружена таблица '{table_name}' из файла {os.path.basename(filepath)}"
-                    if verbose:
-                        print(msg)
-                    logging.info(msg)
-                    return df
-        raise ValueError(
-            f"Таблица с именем '{table_name}' не найдена в файле {filepath}")
+                    return pd.DataFrame(rows[1:], columns=rows[0])
+        raise ValueError(f"Таблица '{table_name}' не найдена")
     except Exception as e:
-        raise RuntimeError(f"Ошибка при загрузке таблицы: {e}")
+        raise RuntimeError(f"Ошибка загрузки: {e}")
 
 
 @log_decorator
@@ -77,17 +76,24 @@ def save_dataframe_to_excel(df, path, verbose=False):
 
 
 @log_decorator
-def smart_merge(df, rename_map):
+def smart_merge(df: pd.DataFrame, rename_map: dict[str, str]) -> pd.DataFrame:
+    """
+    Удаляет дубликаты по комбинации столбцов 'ФИО' и 'УЗ', сохраняя первое вхождение.
+
+    Args:
+        df: Входной DataFrame
+        rename_map: Словарь для переименования столбцов
+
+    Returns:
+        DataFrame без дубликатов
+    """
     df = df.copy()
     df.rename(columns=rename_map, inplace=True)
-    df.dropna(subset=['ФИО', 'УЗ'], how='all', inplace=True)
 
-    def merge_group(group):
-        return next((x for x in group if pd.notna(x) and str(x).strip() != ''), None)
-
-    grouped = df.groupby(['ФИО', 'УЗ'], dropna=False).agg(
-        merge_group).reset_index()
-    return grouped
+    # Оптимизация через drop_duplicates
+    if all(col in df.columns for col in ['ФИО', 'УЗ']):
+        return df.drop_duplicates(subset=['ФИО', 'УЗ'], keep='first')
+    return df
 
 
 @log_decorator
