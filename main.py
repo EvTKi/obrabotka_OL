@@ -1,63 +1,24 @@
-
-
-# # --- Словарь переименований ---
-# RENAME_MAP = {
-#     "ФИО сотрудника": "ФИО",
-#     "Сотрудник": "ФИО",
-#     "Пользователь": "Учетная запись",
-#     "Учетная запись сотрудника": "УЗ",
-#     "Учетная запись в MS AD": "УЗ",
-#     "Учетная запись MS AD": "УЗ",
-#     "Учетная запись в службе каталогов": "УЗ",
-#     "Электронная почта*": "Электронная почта",
-#     "Мобильный телефон*": "Мобильный телефон"
-# }
-
-# # --- Модули ---
-# MODULES = {
-#     "ОЖ": {
-#         "table_names": ["ДП", "Рук", "Проч_персон"],
-#         "columns_to_remove": ["Столбец1"]
-#     },
-#     "ЖД": {
-#         "table_names": ["ЖД"],
-#         "columns_to_remove": ["Столбец1"]
-#     },
-#     "ЖТАР": {
-#         "table_names": ["ГИД"],
-#         "columns_to_remove": ["Столбец1"]
-#     }
-# }
-
-# REPLACE = {
-#     "Обнаружение дефектов": {
-#         "+": "10001700-0000-0000-C000-0000006D746C"
-#     },
-#     "Ответственный за устранение дефектов": {
-#         "+": "10001701-0000-0000-C000-0000006D746C"
-#     },
-#     "Устранение дефектов": {
-#         "+": "10001702-0000-0000-C000-0000006D746C"
-#     }
-# }
-
-
 import os
 from datetime import datetime
 import pandas as pd
 from functions import (
-    set_log_file_path,
     load_named_table,
     combine_dataframes,
     save_dataframe_to_excel,
     smart_merge,
     apply_replacements
 )
+from logger_utils import (
+    set_log_file_path
+)
+import json
+from pathlib import Path
 
 # --- Константы ---
-INPUT_FOLDER = os.path.join(os.getcwd(), "Обрабатываемые")
-PROCESSED_FOLDER = os.path.join(os.getcwd(), "Обработанные")
-LOG_FOLDER = os.path.join(os.getcwd(), "log")
+ROOT = Path.cwd()
+INPUT_FOLDER = ROOT / "Обрабатываемые"
+PROCESSED_FOLDER = ROOT / "Обработанные"
+LOG_FOLDER = ROOT / "log"
 
 os.makedirs(PROCESSED_FOLDER, exist_ok=True)
 os.makedirs(LOG_FOLDER, exist_ok=True)
@@ -66,46 +27,12 @@ log_filename = f"log {datetime.now().strftime('%Y-%m-%d %H-%M-%S')}.log"
 log_file_path = os.path.join(LOG_FOLDER, log_filename)
 set_log_file_path(log_file_path)
 
-# --- Словарь переименований ---
-RENAME_MAP = {
-    "ФИО сотрудника": "ФИО",
-    "Сотрудник": "ФИО",
-    "Пользователь": "Учетная запись",
-    "Учетная запись сотрудника": "УЗ",
-    "Учетная запись в MS AD": "УЗ",
-    "Учетная запись MS AD": "УЗ",
-    "Учетная запись в службе каталогов": "УЗ",
-    "Электронная почта*": "Электронная почта",
-    "Мобильный телефон*": "Мобильный телефон"
-}
+with open("config.json", "r", encoding="utf-8") as f:
+    config = json.load(f)
 
-REPLACE = {
-    "Обнаружение дефектов": {
-        "+": "10001700-0000-0000-C000-0000006D746C"
-    },
-    "Ответственный за устранение дефектов": {
-        "+": "10001701-0000-0000-C000-0000006D746C"
-    },
-    "Устранение дефектов": {
-        "+": "10001702-0000-0000-C000-0000006D746C"
-    }
-}
-
-# --- Модули ---
-MODULES = {
-    "ОЖ": {
-        "table_names": ["ДП", "Рук", "Проч_персон"],
-        "columns_to_remove": ["Столбец1"]
-    },
-    "ЖД": {
-        "table_names": ["ЖД"],
-        "columns_to_remove": ["Столбец1"]
-    },
-    "ЖТАР": {
-        "table_names": ["ГИД"],
-        "columns_to_remove": ["Столбец1"]
-    }
-}
+RENAME_MAP = config["RENAME_MAP"]
+REPLACE_ENERGYMAIN = config["REPLACE_ENERGYMAIN"]
+MODULES = config["MODULES"]
 
 # --- Основная обработка ---
 all_dfs = []
@@ -157,7 +84,7 @@ save_dataframe_to_excel(combined, intermediate_path)
 final_df = smart_merge(combined, RENAME_MAP)
 
 # Применение замен
-final_df = apply_replacements(final_df, REPLACE)
+final_df = apply_replacements(final_df, REPLACE_ENERGYMAIN)
 
 final_path = os.path.join(PROCESSED_FOLDER, "итог.xlsx")
 save_dataframe_to_excel(final_df, final_path)

@@ -1,53 +1,14 @@
+# functions.py
+
 import os
-import logging
 import pandas as pd
 from openpyxl import load_workbook
-
-llog_file_path = None
-
-
-def set_log_file_path(path):
-    global log_file_path
-    log_file_path = path
-
-
-def set_log_level(level: int):
-    """
-    Устанавливает уровень логирования:
-    1 — только ошибки (ERROR),
-    2 — стандартное логирование (INFO),
-    3 — подробное логирование (DEBUG)
-    """
-    if level == 1:
-        log_level = logging.ERROR
-    elif level == 2:
-        log_level = logging.INFO
-    else:
-        log_level = logging.DEBUG
-
-    logging.basicConfig(
-        filename=log_file_path,
-        level=log_level,
-        format="%(asctime)s - %(levelname)s - %(message)s"
-    )
-
-
-def log_decorator(func):
-    def wrapper(*args, **kwargs):
-        try:
-            result = func(*args, **kwargs)
-            return result
-        except Exception as e:
-            msg = f"Ошибка в функции {func.__name__}: {e}"
-            print(msg)
-            if log_file_path:
-                logging.exception(msg)
-            raise
-    return wrapper
+import logging
+from logger_utils import log_decorator
 
 
 @log_decorator
-def load_named_table(filepath, table_name):
+def load_named_table(filepath, table_name, verbose=False):
     try:
         wb = load_workbook(filepath, data_only=True)
         for sheet in wb.worksheets:
@@ -58,21 +19,19 @@ def load_named_table(filepath, table_name):
                     headers = rows[0]
                     values = rows[1:]
                     df = pd.DataFrame(values, columns=headers)
-                    print(
-                        f"Загружена таблица '{table_name}' из файла {os.path.basename(filepath)}")
-                    if log_file_path:
-                        logging.info(
-                            f"Загружена таблица '{table_name}' из файла {os.path.basename(filepath)}")
+                    msg = f"Загружена таблица '{table_name}' из файла {os.path.basename(filepath)}"
+                    if verbose:
+                        print(msg)
+                    logging.info(msg)
                     return df
         raise ValueError(
             f"Таблица с именем '{table_name}' не найдена в файле {filepath}")
     except Exception as e:
-        raise RuntimeError(
-            f"Ошибка при загрузке таблицы '{table_name}' из файла {filepath}: {e}")
+        raise RuntimeError(f"Ошибка при загрузке таблицы: {e}")
 
 
 @log_decorator
-def load_all_tables_from_file(filepath):
+def load_all_tables_from_file(filepath, verbose=False):
     tables = []
     try:
         wb = load_workbook(filepath, data_only=True)
@@ -88,10 +47,10 @@ def load_all_tables_from_file(filepath):
                 df = pd.DataFrame(values, columns=headers)
                 tables.append(df)
 
-        print(f"В файле '{filepath}' найдены таблицы: \n{all_table_names}")
-        if log_file_path:
-            logging.info(
-                f"В файле '{filepath}' найдены таблицы: \n{all_table_names}")
+        msg = f"В файле '{filepath}' найдены таблицы: \n{all_table_names}"
+        if verbose:
+            print(msg)
+        logging.info(msg)
         return tables
     except Exception as e:
         raise RuntimeError(
@@ -109,15 +68,12 @@ def combine_dataframes(dfs, columns_to_remove, rename_map):
 
 
 @log_decorator
-def save_dataframe_to_excel(df, path):
+def save_dataframe_to_excel(df, path, verbose=False):
     df.to_excel(path, index=False)
-    print(f"Результат сохранён: {path}")
-    if log_file_path:
-        logging.info(f"Результат сохранён: {path}")
-
-
-def merge_group(group):
-    return group.apply(lambda col: next((x for x in col if pd.notna(x) and str(x).strip() != ''), None))
+    msg = f"Результат сохранён: {path}"
+    if verbose:
+        print(msg)
+    logging.info(msg)
 
 
 @log_decorator
@@ -135,7 +91,7 @@ def smart_merge(df, rename_map):
 
 
 @log_decorator
-def apply_replacements(df: pd.DataFrame, replace_dict: dict) -> pd.DataFrame:
+def apply_replacements(df: pd.DataFrame, replace_dict: dict, verbose=False) -> pd.DataFrame:
     """
     Применяет замены значений в указанных столбцах DataFrame согласно словарю replacements.
     Формат словаря:
@@ -154,13 +110,13 @@ def apply_replacements(df: pd.DataFrame, replace_dict: dict) -> pd.DataFrame:
                 mask = df[column] == old_value
                 if mask.any():
                     msg = f"Значение столбца '{column}' заменено с '{old_value}' на '{new_value}'"
-                    print(msg)
-                    if log_file_path:
-                        logging.info(msg)
+                    if verbose:
+                        print(msg)
+                    logging.info(msg)
                     df.loc[mask, column] = new_value
         else:
-            print(f"Столбец '{column}' не найден в DataFrame для замены.")
-            if log_file_path:
-                logging.warning(
-                    f"Столбец '{column}' не найден в DataFrame для замены.")
+            msg = f"Столбец '{column}' не найден в DataFrame для замены."
+            if verbose:
+                print(msg)
+            logging.warning(msg)
     return df
