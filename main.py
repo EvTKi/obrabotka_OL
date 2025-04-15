@@ -1,14 +1,57 @@
+
+
+# # --- Словарь переименований ---
+# RENAME_MAP = {
+#     "ФИО сотрудника": "ФИО",
+#     "Сотрудник": "ФИО",
+#     "Пользователь": "Учетная запись",
+#     "Учетная запись сотрудника": "УЗ",
+#     "Учетная запись в MS AD": "УЗ",
+#     "Учетная запись MS AD": "УЗ",
+#     "Учетная запись в службе каталогов": "УЗ",
+#     "Электронная почта*": "Электронная почта",
+#     "Мобильный телефон*": "Мобильный телефон"
+# }
+
+# # --- Модули ---
+# MODULES = {
+#     "ОЖ": {
+#         "table_names": ["ДП", "Рук", "Проч_персон"],
+#         "columns_to_remove": ["Столбец1"]
+#     },
+#     "ЖД": {
+#         "table_names": ["ЖД"],
+#         "columns_to_remove": ["Столбец1"]
+#     },
+#     "ЖТАР": {
+#         "table_names": ["ГИД"],
+#         "columns_to_remove": ["Столбец1"]
+#     }
+# }
+
+# REPLACE = {
+#     "Обнаружение дефектов": {
+#         "+": "10001700-0000-0000-C000-0000006D746C"
+#     },
+#     "Ответственный за устранение дефектов": {
+#         "+": "10001701-0000-0000-C000-0000006D746C"
+#     },
+#     "Устранение дефектов": {
+#         "+": "10001702-0000-0000-C000-0000006D746C"
+#     }
+# }
+
+
 import os
 from datetime import datetime
 import pandas as pd
 from functions import (
     set_log_file_path,
     load_named_table,
-    load_all_tables_from_file,
     combine_dataframes,
     save_dataframe_to_excel,
     smart_merge,
-    set_log_level
+    apply_replacements
 )
 
 # --- Константы ---
@@ -23,9 +66,6 @@ log_filename = f"log {datetime.now().strftime('%Y-%m-%d %H-%M-%S')}.log"
 log_file_path = os.path.join(LOG_FOLDER, log_filename)
 set_log_file_path(log_file_path)
 
-LOGGING_LEVEL = 2  # 1 — ошибки, 2 — INFO, 3 — DEBUG
-set_log_level(LOGGING_LEVEL)
-
 # --- Словарь переименований ---
 RENAME_MAP = {
     "ФИО сотрудника": "ФИО",
@@ -37,6 +77,18 @@ RENAME_MAP = {
     "Учетная запись в службе каталогов": "УЗ",
     "Электронная почта*": "Электронная почта",
     "Мобильный телефон*": "Мобильный телефон"
+}
+
+REPLACE = {
+    "Обнаружение дефектов": {
+        "+": "10001700-0000-0000-C000-0000006D746C"
+    },
+    "Ответственный за устранение дефектов": {
+        "+": "10001701-0000-0000-C000-0000006D746C"
+    },
+    "Устранение дефектов": {
+        "+": "10001702-0000-0000-C000-0000006D746C"
+    }
 }
 
 # --- Модули ---
@@ -55,20 +107,23 @@ MODULES = {
     }
 }
 
-# --- Основная обработка --
+# --- Основная обработка ---
 all_dfs = []
 
 for filename in os.listdir(INPUT_FOLDER):
     if not filename.endswith(".xlsx"):
         continue
 
-    file_path = os.path.join(INPUT_FOLDER, filename)
+    if "~$" in filename or "log" in filename or "Обработано" in filename:
+        continue
+
     module_key = next((key for key in MODULES if key in filename), None)
 
     if not module_key:
-        print(f"Модуль не найден для файла: {filename}")
-        continue
+        print(f"Пропущен файл без описанного модуля: {filename}")
+        continue  # <-- Пропускаем файл
 
+    file_path = os.path.join(INPUT_FOLDER, filename)
     table_names = MODULES[module_key]["table_names"]
     columns_to_remove = MODULES[module_key]["columns_to_remove"]
 
@@ -100,5 +155,9 @@ intermediate_path = os.path.join(
 save_dataframe_to_excel(combined, intermediate_path)
 
 final_df = smart_merge(combined, RENAME_MAP)
+
+# Применение замен
+final_df = apply_replacements(final_df, REPLACE)
+
 final_path = os.path.join(PROCESSED_FOLDER, "итог.xlsx")
 save_dataframe_to_excel(final_df, final_path)

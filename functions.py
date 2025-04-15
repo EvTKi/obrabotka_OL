@@ -132,3 +132,35 @@ def smart_merge(df, rename_map):
     grouped = df.groupby(['ФИО', 'УЗ'], dropna=False).agg(
         merge_group).reset_index()
     return grouped
+
+
+@log_decorator
+def apply_replacements(df: pd.DataFrame, replace_dict: dict) -> pd.DataFrame:
+    """
+    Применяет замены значений в указанных столбцах DataFrame согласно словарю replacements.
+    Формат словаря:
+    {
+        "Имя столбца": {
+            "старое значение": "новое значение",
+            ...
+        },
+        ...
+    }
+    """
+    df = df.copy()
+    for column, replacements in replace_dict.items():
+        if column in df.columns:
+            for old_value, new_value in replacements.items():
+                mask = df[column] == old_value
+                if mask.any():
+                    msg = f"Значение столбца '{column}' заменено с '{old_value}' на '{new_value}'"
+                    print(msg)
+                    if log_file_path:
+                        logging.info(msg)
+                    df.loc[mask, column] = new_value
+        else:
+            print(f"Столбец '{column}' не найден в DataFrame для замены.")
+            if log_file_path:
+                logging.warning(
+                    f"Столбец '{column}' не найден в DataFrame для замены.")
+    return df
