@@ -8,69 +8,69 @@ from functions import (
     smart_merge,
     apply_replacements
 )
-from logger_utils import (
-    set_log_file_path
-)
-import json
-from pathlib import Path
+from logger_utils import set_log_file_path
 from config_manager import config
+from pathlib import Path
 
 # --- Константы ---
-# ROOT = Path.cwd()
 INPUT_FOLDER = config.ROOT / "Обрабатываемые"
 PROCESSED_FOLDER = config.ROOT / "Обработанные"
 LOG_FOLDER = config.ROOT / "log"
 
-os.makedirs(config.PROCESSED_FOLDER, exist_ok=True)
-os.makedirs(config.LOG_FOLDER, exist_ok=True)
+# Создаем папку для обработанных файлов
+os.makedirs(PROCESSED_FOLDER, exist_ok=True)
+os.makedirs(LOG_FOLDER, exist_ok=True)  # Создаем папку для логов
 
 log_filename = f"log {datetime.now().strftime('%Y-%m-%d %H-%M-%S')}.log"
-log_file_path = os.path.join(config.LOG_FOLDER, log_filename)
-set_log_file_path(log_file_path)
-
-with open("config.json", "r", encoding="utf-8") as f:
-    config = json.load(f)
+# Используем Path для формирования пути
+log_file_path = LOG_FOLDER / log_filename
+set_log_file_path(str(log_file_path))  # Конвертируем в строку перед передачей
 
 RENAME_MAP = config.RENAME_MAP
 REPLACE_ENERGYMAIN = config.REPLACE_ENERGYMAIN
+REPLACE_ACCESS = config.REPLACE_ACCESS
 MODULES = config.MODULES
-
 
 # --- Основная обработка ---
 all_dfs = []
+all_combined_data = []  # Для сохранения исходных данных до smart_merge
 
-for filename in os.listdir(config.INPUT_FOLDER):
-    if not filename.endswith(".xlsx"):
-        continue
-
-    if "~$" in filename or "log" in filename or "Обработано" in filename:
-        continue
-
-    module_key = next((key for key in config.MODULES if key in filename), None)
-
-    if not module_key:
-        print(f"Пропущен файл без описанного модуля: {filename}")
-        continue  # <-- Пропускаем файл
-
-    file_path = os.path.join(config.INPUT_FOLDER, filename)
-    table_names = config.MODULES[module_key]["table_names"]
-    columns_to_remove = config.MODULES[module_key]["columns_to_remove"]
+for module_key, module_config in MODULES.items():
+    table_names = module_config["table_names"]
+    columns_to_remove = module_config["columns_to_remove"]
 
     dfs = []
+    for filename in os.listdir(INPUT_FOLDER):
+        if not filename.endswith(".xlsx"):
+            continue
 
-    for table_name in table_names:
-        df = load_named_table(file_path, table_name)
-        if df is not None:
-            dfs.append(df)
+        if "~$" in filename or "log" in filename or "Обработано" in filename:
+            continue
+
+        # Если ключ модуля не совпадает, пропускаем файл
+        if module_key not in filename:
+            continue
+
+        file_path = INPUT_FOLDER / filename  # Используем Path для формирования пути
+        for table_name in table_names:
+            df = load_named_table(file_path, table_name)
+            if df is not None:
+                dfs.append(df)
 
     if not dfs:
-        print(f"Не загружено ни одной таблицы из файла {filename}")
+        print(
+            f"Не загружено ни одной таблицы из файла {filename} для модуля {module_key}")
         continue
 
-    combined_df = combine_dataframes(dfs, columns_to_remove, config.RENAME_MAP)
-    processed_path = os.path.join(
-        config.PROCESSED_FOLDER, f"Обработано_{module_key}.xlsx")
-    save_dataframe_to_excel(combined_df, processed_path)
+    # Объединяем все DataFrame
+    combined_df = combine_dataframes(dfs, columns_to_remove, RENAME_MAP)
+
+    # Добавляем объединённые данные в список для сохранения
+    all_combined_data.append(combined_df)
+
+    # Сохраняем промежуточный результат для каждого модуля
+    processed_path = PROCESSED_FOLDER / f"Обработано_{module_key}.xlsx"
+    save_dataframe_to_excel(combined_df, str(processed_path))
 
     all_dfs.append(combined_df)
 
@@ -78,15 +78,22 @@ if not all_dfs:
     print("Нет данных для объединения.")
     exit()
 
-combined = pd.concat(all_dfs, ignore_index=True)
-intermediate_path = os.path.join(
-    config.PROCESSED_FOLDER, "до_удаления_дубликатов.xlsx")
-save_dataframe_to_excel(combined, intermediate_path)
+# Объединяем все DataFrame в один
+final_combined_df = pd.concat(all_dfs, ignore_index=True)
 
-final_df = smart_merge(combined, config.RENAME_MAP)
+# Применение замен для REPLACE_ENERGYMAIN
+final_combined_df = apply_replacements(final_combined_df, REPLACE_ENERGYMAIN)
 
-# Применение замен
-final_df = apply_replacements(final_df, config.REPLACE_ENERGYMAIN)
+# Применение замен для REPLACE_ACCESS
+final_combined_df = apply_replacements(final_combined_df, REPLACE_ACCESS)
 
-final_path = os.path.join(config.PROCESSED_FOLDER, "итог.xlsx")
-save_dataframe_to_excel(final_df, final_path)
+# Сохраняем итоговый файл до применения smart_merge
+final_path_before_merge = PROCESSED_FOLDER / "итог_до_удаления_дубликатов.xlsx"
+save_dataframe_to_excel(final_combined_df, str(final_path_before_merge))
+
+# Применение smart_merge для итогового DataFrame
+final_combined_df = smart_merge(final_combined_df, RENAME_MAP)
+
+# Сохраняем итоговый файл после применения smart_merge (удаления дубликатов)
+final_path = PROCESSED_FOLDER / "итог_после_удаления_дубликатов.xlsx"
+save_dataframe_to_excel(final_combined_df, str(final_path))

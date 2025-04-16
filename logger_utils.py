@@ -1,11 +1,10 @@
-# logger_utils.py
-
 import logging
 
 log_file_path = None
 
 
-def set_log_file_path(path):
+def set_log_file_path(path: str):
+    """Устанавливает путь для лог-файла"""
     global log_file_path
     log_file_path = path
 
@@ -31,14 +30,14 @@ def set_log_level(level: int):
     )
 
 
-def log_decorator(func):
-    def wrapper(*args, **kwargs):
-        try:
-            return func(*args, **kwargs)
-        except ValueError as ve:
-            logging.warning(f"Предупреждение в функции {func.__name__}: {ve}")
-            raise
-        except Exception as e:
-            logging.exception(f"Ошибка в функции {func.__name__}: {e}")
-            raise
-    return wrapper
+def log_decorator(level=logging.INFO):
+    """Декоратор для логирования с возможностью указания уровня логирования"""
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            try:
+                return func(*args, **kwargs)
+            except Exception as e:
+                logging.log(level, f"Ошибка в функции {func.__name__}: {e}")
+                raise
+        return wrapper
+    return decorator

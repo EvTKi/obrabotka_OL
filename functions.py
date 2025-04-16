@@ -1,23 +1,42 @@
-# functions.py
-
 import os
 import pandas as pd
 from openpyxl import load_workbook
+from pathlib import Path
+from functools import lru_cache
 import logging
 from logger_utils import log_decorator
-from functools import lru_cache
+from config_manager import config
+
+# Использование pathlib для работы с путями
+input_folder = Path(config.INPUT_FOLDER)
+processed_folder = Path(config.PROCESSED_FOLDER)
+log_folder = Path(config.LOG_FOLDER)
 
 
-@lru_cache(maxsize=10)  # Кэширует 10 последних файлов
+@lru_cache(maxsize=10)
 def _load_workbook_cached(filepath: str):
-    """Кэшированная версия load_workbook"""
-    return load_workbook(filepath, data_only=True)
-
-
-@log_decorator
-def load_named_table(filepath: str, table_name: str) -> pd.DataFrame:
+    """Кэшированная версия load_workbook для предотвращения многократных открытий одного и того же файла."""
     try:
-        wb = _load_workbook_cached(filepath)  # Используем кэшированную версию
+        return load_workbook(filepath, data_only=True)
+    except Exception as e:
+        logging.error(f"Ошибка при загрузке книги Excel {filepath}: {e}")
+        raise
+
+
+@log_decorator(level=logging.DEBUG)
+def load_named_table(filepath: str, table_name: str) -> pd.DataFrame:
+    """
+    Загружает таблицу из Excel файла по имени.
+
+    Args:
+        filepath (str): Путь к Excel файлу.
+        table_name (str): Имя таблицы для загрузки.
+
+    Returns:
+        pd.DataFrame: Таблица, загруженная в виде DataFrame.
+    """
+    try:
+        wb = _load_workbook_cached(filepath)
         for sheet in wb.worksheets:
             for tbl in sheet._tables.values():
                 if tbl.name == table_name:
@@ -29,11 +48,11 @@ def load_named_table(filepath: str, table_name: str) -> pd.DataFrame:
         raise RuntimeError(f"Ошибка загрузки: {e}")
 
 
-@log_decorator
-def load_all_tables_from_file(filepath, verbose=False):
+@log_decorator(level=logging.INFO)
+def load_all_tables_from_file(filepath: str, verbose=False):
     tables = []
     try:
-        wb = load_workbook(filepath, data_only=True)
+        wb = _load_workbook_cached(filepath)
         all_table_names = []
 
         for sheet in wb.worksheets:
@@ -56,7 +75,7 @@ def load_all_tables_from_file(filepath, verbose=False):
             f"Ошибка при чтении всех таблиц из файла {filepath}: {e}")
 
 
-@log_decorator
+@log_decorator(level=logging.DEBUG)
 def combine_dataframes(dfs, columns_to_remove, rename_map):
     combined = pd.concat(dfs, ignore_index=True)
     combined = combined.copy()
@@ -66,8 +85,8 @@ def combine_dataframes(dfs, columns_to_remove, rename_map):
     return combined
 
 
-@log_decorator
-def save_dataframe_to_excel(df, path, verbose=False):
+@log_decorator(level=logging.INFO)
+def save_dataframe_to_excel(df: pd.DataFrame, path: str, verbose=False) -> None:
     df.to_excel(path, index=False)
     msg = f"Результат сохранён: {path}"
     if verbose:
@@ -75,54 +94,61 @@ def save_dataframe_to_excel(df, path, verbose=False):
     logging.info(msg)
 
 
-@log_decorator
+@log_decorator(level=logging.DEBUG)
 def smart_merge(df: pd.DataFrame, rename_map: dict[str, str]) -> pd.DataFrame:
     """
-    Удаляет дубликаты по комбинации столбцов 'ФИО' и 'УЗ', сохраняя первое вхождение.
+    Удаляет дубликаты по комбинации столбцов 'ФИО' и 'УЗ', сохраняет первое вхождение как оригинал,
+    заполняет пропуски у оригинала значениями из дубликатов, удаляет дубли.
 
     Args:
         df: Входной DataFrame
         rename_map: Словарь для переименования столбцов
 
     Returns:
-        DataFrame без дубликатов
+        DataFrame без дубликатов с заполненными пропусками
     """
     df = df.copy()
     df.rename(columns=rename_map, inplace=True)
 
-    # Оптимизация через drop_duplicates
-    if all(col in df.columns for col in ['ФИО', 'УЗ']):
-        return df.drop_duplicates(subset=['ФИО', 'УЗ'], keep='first')
-    return df
+    # Группируем по 'ФИО' и 'УЗ'
+    grouped = df.groupby(['ФИО', 'УЗ'], as_index=False)
+
+    # Для каждой группы обрабатываем дубликаты
+    final_rows = []
+
+    for _, group in grouped:
+        # Оставляем первую строку как оригинал
+        original = group.iloc[0].copy()
+
+        # Проходим по остальным строкам в группе (дубликаты)
+        for _, duplicate in group.iloc[1:].iterrows():
+            # Если у оригинала отсутствуют значения, подставляем их из дубликатов
+            for col in df.columns:
+                if pd.isna(original[col]) and not pd.isna(duplicate[col]):
+                    original[col] = duplicate[col]
+
+        # Добавляем обработанную строку в финальный список
+        final_rows.append(original)
+
+    # Создаем новый DataFrame из обработанных строк
+    final_df = pd.DataFrame(final_rows)
+
+    return final_df
 
 
-@log_decorator
-def apply_replacements(df: pd.DataFrame, replace_dict: dict, verbose=False) -> pd.DataFrame:
-    """
-    Применяет замены значений в указанных столбцах DataFrame согласно словарю replacements.
-    Формат словаря:
-    {
-        "Имя столбца": {
-            "старое значение": "новое значение",
-            ...
-        },
-        ...
-    }
-    """
-    df = df.copy()
-    for column, replacements in replace_dict.items():
+@log_decorator(level=logging.INFO)
+def apply_replacements(df, replacements):
+    for column, replace_dict in replacements.items():
         if column in df.columns:
-            for old_value, new_value in replacements.items():
-                mask = df[column] == old_value
-                if mask.any():
-                    msg = f"Значение столбца '{column}' заменено с '{old_value}' на '{new_value}'"
-                    if verbose:
-                        print(msg)
-                    logging.info(msg)
-                    df.loc[mask, column] = new_value
+            for old_value, new_value in replace_dict.items():
+                try:
+                    df[column] = df[column].replace(old_value, new_value)
+                    logging.info(
+                        f"Заменено значение '{old_value}' на '{new_value}' в столбце '{column}'")
+                except Exception as e:
+                    logging.warning(
+                        f"Ошибка при замене '{old_value}' на '{new_value}' в столбце '{column}': {e}")
         else:
-            msg = f"Столбец '{column}' не найден в DataFrame для замены."
-            if verbose:
-                print(msg)
-            logging.warning(msg)
+            logging.warning(
+                f"Столбец '{column}' не найден в DataFrame для замены.")
     return df

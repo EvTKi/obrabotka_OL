@@ -18,6 +18,7 @@ class AppConfig:
 
         self.RENAME_MAP: dict[str, str] = config["RENAME_MAP"]
         self.REPLACE_ENERGYMAIN: dict[str, Any] = config["REPLACE_ENERGYMAIN"]
+        self.REPLACE_ACCESS: dict[str, Any] = config["REPLACE_ACCESS"]
         self.MODULES: dict[str, dict[str, Any]] = config["MODULES"]
 
 
