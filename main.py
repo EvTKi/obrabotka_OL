@@ -100,11 +100,11 @@ MODULES = {
     "ЖД": {
         "table_names": ["ЖД"],
         "columns_to_remove": ["Столбец1"]
-    },
-    "ЖТАР": {
-        "table_names": ["ГИД"],
-        "columns_to_remove": ["Столбец1"]
     }
+    # "ЖТАР": {
+    #     "table_names": ["ГИД"],
+    #     "columns_to_remove": ["Столбец1"]
+    # }
 }
 
 # --- Основная обработка ---
