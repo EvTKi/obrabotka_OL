@@ -16,10 +16,10 @@ from pathlib import Path
 from config_manager import config
 
 # --- Константы ---
-config.ROOT = Path.cwd()
-config.INPUT_FOLDER = config.ROOT / "Обрабатываемые"
-config.PROCESSED_FOLDER = config.ROOT / "Обработанные"
-config.LOG_FOLDER = config.ROOT / "log"
+# ROOT = Path.cwd()
+INPUT_FOLDER = config.ROOT / "Обрабатываемые"
+PROCESSED_FOLDER = config.ROOT / "Обработанные"
+LOG_FOLDER = config.ROOT / "log"
 
 os.makedirs(config.PROCESSED_FOLDER, exist_ok=True)
 os.makedirs(config.LOG_FOLDER, exist_ok=True)
@@ -31,9 +31,10 @@ set_log_file_path(log_file_path)
 with open("config.json", "r", encoding="utf-8") as f:
     config = json.load(f)
 
-config.RENAME_MAP = config["RENAME_MAP"]
-config.REPLACE_ENERGYMAIN = config["REPLACE_ENERGYMAIN"]
-config.MODULES = config["MODULES"]
+RENAME_MAP = config.RENAME_MAP
+REPLACE_ENERGYMAIN = config.REPLACE_ENERGYMAIN
+MODULES = config.MODULES
+
 
 # --- Основная обработка ---
 all_dfs = []
