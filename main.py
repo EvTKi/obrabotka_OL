@@ -111,7 +111,6 @@ save_dataframe_to_excel(final_combined_df, str(final_path))
 final_combined_df = combine_columns_by_replace_key(
     final_combined_df, "REPLACE_ENERGYMAIN", config)
 
-
 # Сохраняем финальную версию после объединения столбцов
 final_path_after_combine = PROCESSED_FOLDER / \
     "итог_после_объединения_столбцов.xlsx"

@@ -21,8 +21,21 @@ class AppConfig:
         self.REPLACE_ACCESS: dict[str, Any] = config["REPLACE_ACCESS"]
         self.MODULES: dict[str, dict[str, Any]] = config["MODULES"]
 
-    def get_config(self):
-        return self  # Возвращаем сам объект конфигурации
+    def get_config(self, key: str, default: Any = None):
+        """
+        Возвращает значение конфигурации по ключу.
+
+        Args:
+            key (str): Ключ для получения значения.
+            default (Any): Значение по умолчанию, если ключ не найден.
+
+        Returns:
+            Значение конфигурации или значение по умолчанию.
+        """
+        # Проверка, есть ли атрибут с таким именем
+        if hasattr(self, key):
+            return getattr(self, key)
+        return default
 
 
 # Глобальный инстанс конфига

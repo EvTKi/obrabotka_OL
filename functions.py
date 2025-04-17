@@ -213,12 +213,11 @@ def combine_columns_by_replace_key(df: pd.DataFrame, replace_key: str, config) -
 
     df[new_column_name] = df.apply(combine_row_values, axis=1)
 
-    # --- Закомментированный вариант с подстановкой UUID вместо имён ---
-    # for col in columns_to_combine:
-    #     uuid = replace_config[col].get("+")
-    #     if uuid:
-    #         df[col] = uuid
-    #     else:
-    #         df[col] = ""
+    # Удаление столбцов, которые были объединены
+    # for col in replace_config.keys():
+    #     if col in df.columns:
+    #         logging.debug(
+    #             f"Удаляем столбец '{col}', так как он был объединен.")
+    #         df.drop(columns=[col], inplace=True)
 
     return df
