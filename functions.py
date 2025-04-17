@@ -178,7 +178,7 @@ def apply_replacements(df, replace_dict):
 
 
 @log_decorator()
-def combine_columns_by_replace_key(df: pd.DataFrame, replace_key: str, config) -> pd.DataFrame:
+def combine_columns_by_replace_key(df: pd.DataFrame, replace_key: str, config, drop: bool = False) -> pd.DataFrame:
     """
     Объединяет значения из указанных столбцов (по ключу replace_key из config) для каждой строки.
     Если в config есть блок "+", его значение будет использовано как замена.
@@ -214,10 +214,11 @@ def combine_columns_by_replace_key(df: pd.DataFrame, replace_key: str, config) -
     df[new_column_name] = df.apply(combine_row_values, axis=1)
 
     # Удаление столбцов, которые были объединены
-    # for col in replace_config.keys():
-    #     if col in df.columns:
-    #         logging.debug(
-    #             f"Удаляем столбец '{col}', так как он был объединен.")
-    #         df.drop(columns=[col], inplace=True)
+    if drop:
+        for col in replace_config.keys():
+            if col in df.columns:
+                logging.debug(
+                    f"Удаляем столбец '{col}', так как он был объединен.")
+                df.drop(columns=[col], inplace=True)
 
     return df

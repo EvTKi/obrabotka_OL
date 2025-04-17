@@ -98,8 +98,8 @@ final_combined_df = apply_replacements(final_combined_df, REPLACE_ENERGYMAIN)
 final_combined_df = apply_replacements(final_combined_df, REPLACE_ACCESS)
 
 # Сохраняем итоговый файл до применения smart_merge
-final_path_before_merge = PROCESSED_FOLDER / "итог_до_удаления_дубликатов.xlsx"
-save_dataframe_to_excel(final_combined_df, str(final_path_before_merge))
+final_path = PROCESSED_FOLDER / "итог_до_удаления_дубликатов.xlsx"
+save_dataframe_to_excel(final_combined_df, str(final_path))
 
 # Применение smart_merge для итогового DataFrame
 final_combined_df = smart_merge(final_combined_df, RENAME_MAP)
@@ -107,11 +107,23 @@ final_combined_df = smart_merge(final_combined_df, RENAME_MAP)
 # Сохраняем итоговый файл после применения smart_merge (удаления дубликатов)
 final_path = PROCESSED_FOLDER / "итог_после_удаления_дубликатов.xlsx"
 save_dataframe_to_excel(final_combined_df, str(final_path))
+# Применяем combine_columns_by_replace_key для energymain
+final_combined_df = combine_columns_by_replace_key(final_combined_df,
+                                                   "REPLACE_ENERGYMAIN",
+                                                   config,
+                                                   drop=True)
 
-final_combined_df = combine_columns_by_replace_key(
-    final_combined_df, "REPLACE_ENERGYMAIN", config)
+# Сохраняем после объединения столбцов energymain
+final_path = PROCESSED_FOLDER / \
+    "итог_после_объединения_energymain.xlsx"
+save_dataframe_to_excel(final_combined_df, str(final_path))
+# Применяем combine_columns_by_replace_key для access
+final_combined_df = combine_columns_by_replace_key(final_combined_df,
+                                                   "REPLACE_ACCESS",
+                                                   config)
 
-# Сохраняем финальную версию после объединения столбцов
-final_path_after_combine = PROCESSED_FOLDER / \
-    "итог_после_объединения_столбцов.xlsx"
-save_dataframe_to_excel(final_combined_df, str(final_path_after_combine))
+# Сохраняем после объединения столбцов access
+final_path = PROCESSED_FOLDER / \
+    "итог_после_объединения_access.xlsx"
+
+save_dataframe_to_excel(final_combined_df, str(final_path))
