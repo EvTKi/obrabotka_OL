@@ -120,7 +120,8 @@ save_dataframe_to_excel(final_combined_df, str(final_path))
 # Применяем combine_columns_by_replace_key для access
 final_combined_df = combine_columns_by_replace_key(final_combined_df,
                                                    "REPLACE_ACCESS",
-                                                   config)
+                                                   config,
+                                                   drop=True)
 
 # Сохраняем после объединения столбцов access
 final_path = PROCESSED_FOLDER / \

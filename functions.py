@@ -66,7 +66,7 @@ def load_named_table(filepath: str, table_name: str) -> pd.DataFrame:
 
 
 @log_decorator(level=logging.INFO)
-def load_all_tables_from_file(filepath: str, verbose=False):
+def load_all_tables_from_file(filepath: str, verbose: bool = False) -> list[pd.DataFrame]:
     tables = []
     try:
         wb = _load_workbook_cached(filepath)
