@@ -9,7 +9,7 @@ from functions import (
     apply_replacements,
     combine_columns_by_replace_key
 )
-from logger_utils import set_log_file_path
+from logger_utils import (set_log_file_path, set_log_level)
 from config_manager import config
 from pathlib import Path
 import logging
@@ -27,7 +27,7 @@ log_filename = f"log {datetime.now().strftime('%Y-%m-%d %H-%M-%S')}.log"
 # Используем Path для формирования пути
 log_file_path = LOG_FOLDER / log_filename
 set_log_file_path(str(log_file_path))  # Конвертируем в строку перед передачей
-
+set_log_level(2)
 RENAME_MAP = config.RENAME_MAP
 REPLACE_ENERGYMAIN = config.REPLACE_ENERGYMAIN
 REPLACE_ACCESS = config.REPLACE_ACCESS

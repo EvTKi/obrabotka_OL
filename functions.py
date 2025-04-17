@@ -1,5 +1,6 @@
 import os
 import pandas as pd
+import re
 from openpyxl import load_workbook
 from pathlib import Path
 from functools import lru_cache
@@ -24,6 +25,18 @@ def _load_workbook_cached(filepath: str):
         raise
 
 
+def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Нормализует имена столбцов DataFrame: убирает лишние пробелы и переносы строк,
+    сводит несколько пробелов к одному.
+
+    :param df: DataFrame
+    :return: DataFrame с нормализованными именами столбцов
+    """
+    df.columns = df.columns.str.replace(r'\s+', ' ', regex=True).str.strip()
+    return df
+
+
 @log_decorator(level=logging.DEBUG)
 def load_named_table(filepath: str, table_name: str) -> pd.DataFrame:
     """
@@ -43,7 +56,10 @@ def load_named_table(filepath: str, table_name: str) -> pd.DataFrame:
                 if tbl.name == table_name:
                     data = sheet[tbl.ref]
                     rows = [[cell.value for cell in row] for row in data]
-                    return pd.DataFrame(rows[1:], columns=rows[0])
+                    # создаем DataFrame
+                    df = pd.DataFrame(rows[1:], columns=rows[0])
+                    # Применяем нормализацию столбцов
+                    return normalize_columns(df)
         raise ValueError(f"Таблица '{table_name}' не найдена")
     except Exception as e:
         raise RuntimeError(f"Ошибка загрузки: {e}")
@@ -138,20 +154,26 @@ def smart_merge(df: pd.DataFrame, rename_map: dict[str, str]) -> pd.DataFrame:
 
 
 @log_decorator(level=logging.INFO)
-def apply_replacements(df, replacements):
-    for column, replace_dict in replacements.items():
+def apply_replacements(df, replace_dict):
+    """
+    Заменяет значения в DataFrame по указанному словарю замен.
+    Убирает лишние пробелы и переносы строк в именах столбцов перед применением замен.
+
+    :param df: DataFrame, с данными
+    :param replace_dict: словарь замен в формате {столбец: {старое значение: новое значение}}
+    :return: DataFrame с применёнными заменами
+    """
+
+    # Убираем лишние пробелы и переносы строк из имен столбцов
+    df.columns = df.columns.str.replace(r'\s+', ' ', regex=True).str.strip()
+
+    # Проходим по всем столбцам и заменяем их значения
+    for column, replacements in replace_dict.items():
         if column in df.columns:
-            for old_value, new_value in replace_dict.items():
-                try:
-                    df[column] = df[column].replace(old_value, new_value)
-                    logging.info(
-                        f"Заменено значение '{old_value}' на '{new_value}' в столбце '{column}'")
-                except Exception as e:
-                    logging.warning(
-                        f"Ошибка при замене '{old_value}' на '{new_value}' в столбце '{column}': {e}")
-        else:
-            logging.warning(
-                f"Столбец '{column}' не найден в DataFrame для замены.")
+            for old_value, new_value in replacements.items():
+                # Заменяем значения в столбце
+                df[column] = df[column].replace(old_value, new_value)
+
     return df
 
 
