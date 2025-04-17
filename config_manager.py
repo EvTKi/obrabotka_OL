@@ -21,6 +21,9 @@ class AppConfig:
         self.REPLACE_ACCESS: dict[str, Any] = config["REPLACE_ACCESS"]
         self.MODULES: dict[str, dict[str, Any]] = config["MODULES"]
 
+    def get_config(self):
+        return self  # Возвращаем сам объект конфигурации
+
 
 # Глобальный инстанс конфига
 config = AppConfig()

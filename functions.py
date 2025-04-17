@@ -6,6 +6,7 @@ from functools import lru_cache
 import logging
 from logger_utils import log_decorator
 from config_manager import config
+from typing import Dict
 
 # Использование pathlib для работы с путями
 input_folder = Path(config.INPUT_FOLDER)
@@ -151,4 +152,51 @@ def apply_replacements(df, replacements):
         else:
             logging.warning(
                 f"Столбец '{column}' не найден в DataFrame для замены.")
+    return df
+
+
+@log_decorator()
+def combine_columns_by_replace_key(df: pd.DataFrame, replace_key: str, config) -> pd.DataFrame:
+    """
+    Объединяет значения из указанных столбцов (по ключу replace_key из config) для каждой строки.
+    Если в config есть блок "+", его значение будет использовано как замена.
+    Итоговое значение объединяется через '!' и записывается обратно в столбец (если он один) или можно расширить логику.
+
+    Пример:
+    Для replace_key = "REPLACE_ENERGYMAIN":
+    {
+        "Устранение дефектов": { "+": "uuid1" },
+        "Ответственный за устранение дефектов": { "+": "uuid2" }
+    }
+
+    Значения из этих двух столбцов будут объединены через "!".
+    """
+    replace_config = getattr(config, replace_key, {})
+    columns_to_combine = list(replace_config.keys())
+
+    if not columns_to_combine:
+        return df
+
+    # Объединяем значения по строкам
+    def combine_row_values(row):
+        values = []
+        for col in columns_to_combine:
+            val = row.get(col)
+            if pd.notna(val) and str(val).strip():
+                values.append(str(val).strip())
+        return "!".join(values)
+
+    # Новый столбец, по replace_key
+    new_column_name = f"{replace_key}_combined"
+
+    df[new_column_name] = df.apply(combine_row_values, axis=1)
+
+    # --- Закомментированный вариант с подстановкой UUID вместо имён ---
+    # for col in columns_to_combine:
+    #     uuid = replace_config[col].get("+")
+    #     if uuid:
+    #         df[col] = uuid
+    #     else:
+    #         df[col] = ""
+
     return df

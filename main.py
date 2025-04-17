@@ -6,11 +6,13 @@ from functions import (
     combine_dataframes,
     save_dataframe_to_excel,
     smart_merge,
-    apply_replacements
+    apply_replacements,
+    combine_columns_by_replace_key
 )
 from logger_utils import set_log_file_path
 from config_manager import config
 from pathlib import Path
+import logging
 
 # --- Константы ---
 INPUT_FOLDER = config.ROOT / "Обрабатываемые"
@@ -30,6 +32,12 @@ RENAME_MAP = config.RENAME_MAP
 REPLACE_ENERGYMAIN = config.REPLACE_ENERGYMAIN
 REPLACE_ACCESS = config.REPLACE_ACCESS
 MODULES = config.MODULES
+MERGE_REPLACEMENTS = {**REPLACE_ENERGYMAIN, **REPLACE_ACCESS}
+
+
+# replace_energymain_keys = list(config.REPLACE_ENERGYMAIN.keys())
+# replace_access_keys = list(config.REPLACE_ACCESS.keys())
+# print(replace_energymain_keys)
 
 # --- Основная обработка ---
 all_dfs = []
@@ -59,6 +67,8 @@ for module_key, module_config in MODULES.items():
 
     if not dfs:
         print(
+            f"Не загружено ни одной таблицы из файла {filename} для модуля {module_key}")
+        logging.warning(
             f"Не загружено ни одной таблицы из файла {filename} для модуля {module_key}")
         continue
 
@@ -97,3 +107,12 @@ final_combined_df = smart_merge(final_combined_df, RENAME_MAP)
 # Сохраняем итоговый файл после применения smart_merge (удаления дубликатов)
 final_path = PROCESSED_FOLDER / "итог_после_удаления_дубликатов.xlsx"
 save_dataframe_to_excel(final_combined_df, str(final_path))
+
+final_combined_df = combine_columns_by_replace_key(
+    final_combined_df, "REPLACE_ENERGYMAIN", config)
+
+
+# Сохраняем финальную версию после объединения столбцов
+final_path_after_combine = PROCESSED_FOLDER / \
+    "итог_после_объединения_столбцов.xlsx"
+save_dataframe_to_excel(final_combined_df, str(final_path_after_combine))

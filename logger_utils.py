@@ -1,4 +1,5 @@
 import logging
+from functools import wraps
 
 log_file_path = None
 
@@ -31,13 +32,18 @@ def set_log_level(level: int):
 
 
 def log_decorator(level=logging.INFO):
-    """Декоратор для логирования с возможностью указания уровня логирования"""
     def decorator(func):
+        @wraps(func)
         def wrapper(*args, **kwargs):
+            logging.log(
+                level, f"Вызов функции {func.__name__} с аргументами: {args}, {kwargs}")
             try:
-                return func(*args, **kwargs)
+                result = func(*args, **kwargs)
+                logging.log(
+                    level, f"Функция {func.__name__} завершена успешно.")
+                return result
             except Exception as e:
-                logging.log(level, f"Ошибка в функции {func.__name__}: {e}")
+                logging.exception(f"Ошибка в функции {func.__name__}: {e}")
                 raise
         return wrapper
     return decorator
