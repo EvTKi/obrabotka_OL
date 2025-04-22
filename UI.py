@@ -1,10 +1,10 @@
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
+import tkinter as tk
 import subprocess
 import os
-from config_manager import config
 import json
-import shutil
+from config_manager import config
 
 
 class AdminHelperApp(ctk.CTk):
@@ -95,7 +95,7 @@ class AdminHelperApp(ctk.CTk):
 
         self.settings_window = ctk.CTkToplevel(self)
         self.settings_window.title("Настройки")
-        self.settings_window.geometry("700x500")
+        self.settings_window.geometry("750x520")
         self.settings_window.transient(self)
         self.settings_window.attributes("-topmost", True)
         self.settings_window.grab_set()
@@ -104,66 +104,116 @@ class AdminHelperApp(ctk.CTk):
             "WM_DELETE_WINDOW", self.on_close_settings)
 
         self.tabview = ctk.CTkTabview(
-            self.settings_window, width=680, height=420)
-        self.tabview.pack(padx=10, pady=10, fill="both", expand=True)
+            self.settings_window, width=700, height=420)
+        self.tabview.pack(padx=10, pady=(10, 0), fill="both", expand=True)
 
         self.rename_entries = {}
 
-        self.config_data = config.read_raw()  # читаем полный config.json
+        self.config_data = config.read_raw()
 
         for section in self.config_data:
             self.build_config_tab(section, self.config_data[section])
 
-        save_button = ctk.CTkButton(
-            self.settings_window, text="Сохранить", command=self.save_config)
-        save_button.pack(pady=10, padx=10, anchor="se")
+        # Кнопки в одну строку снизу
+        button_frame = ctk.CTkFrame(self.settings_window)
+        button_frame.pack(pady=10, padx=10, anchor="se", fill="x")
+
+        self.success_label = ctk.CTkLabel(
+            button_frame, text="", text_color="green")
+        self.success_label.pack(side="left", padx=(10, 0))
+
+        add_btn = ctk.CTkButton(
+            button_frame, text="Добавить строку", command=self.add_entry_to_active_tab)
+        add_btn.pack(side="right", padx=5)
+
+        del_btn = ctk.CTkButton(button_frame, text="Удалить строку",
+                                command=self.remove_last_entry_from_active_tab)
+        del_btn.pack(side="right", padx=5)
+
+        save_btn = ctk.CTkButton(
+            button_frame, text="Сохранить", command=self.save_config)
+        save_btn.pack(side="right", padx=5)
 
     def build_config_tab(self, tab_name, mapping):
         tab = self.tabview.add(tab_name)
 
-        header_frame = ctk.CTkFrame(tab)
+        canvas = tk.Canvas(tab)
+        scrollbar = ctk.CTkScrollbar(tab, command=canvas.yview)
+        scrollable_frame = ctk.CTkFrame(canvas)
+
+        scrollable_frame.bind("<Configure>", lambda e: canvas.configure(
+            scrollregion=canvas.bbox("all")))
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        # ✅ Привязка прокрутки к canvas, а не глобально
+        canvas.bind("<MouseWheel>", lambda event: canvas.yview_scroll(
+            int(-1 * (event.delta / 120)), "units"))
+
+        header_frame = ctk.CTkFrame(scrollable_frame)
         header_frame.pack(fill="x", pady=(10, 0))
         ctk.CTkLabel(header_frame, text="Ключ", width=250).pack(
             side="left", padx=(10, 0))
         ctk.CTkLabel(header_frame, text="Значение").pack(side="left", padx=10)
 
-        self.rename_entries[tab_name] = {}
+        self.rename_entries[tab_name] = {
+            "frame": scrollable_frame, "entries": []}
 
         for key, value in mapping.items():
-            row = ctk.CTkFrame(tab)
-            row.pack(fill="x", pady=2, padx=10)
+            self.add_entry_to_tab(tab_name, key, str(value))
 
-            orig_entry = ctk.CTkEntry(row, width=250)
-            orig_entry.insert(0, key)
-            orig_entry.pack(side="left")
+    def add_entry_to_tab(self, tab_name, key="", value=""):
+        frame = self.rename_entries[tab_name]["frame"]
+        row = ctk.CTkFrame(frame)
+        row.pack(fill="x", pady=2, padx=10)
 
-            val_entry = ctk.CTkEntry(row, width=300)
-            val_entry.insert(0, str(value))
-            val_entry.pack(side="left", padx=10)
+        orig_entry = ctk.CTkEntry(row, width=250)
+        orig_entry.insert(0, key)
+        orig_entry.pack(side="left")
 
-            self.rename_entries[tab_name][orig_entry] = val_entry
+        val_entry = ctk.CTkEntry(row, width=300)
+        val_entry.insert(0, str(value))
+        val_entry.pack(side="left", padx=10)
+
+        self.rename_entries[tab_name]["entries"].append(
+            (orig_entry, val_entry))
+        row.update_idletasks()
+        frame.update_idletasks()
+        frame.master.yview_moveto(1.0)
+
+    def add_entry_to_active_tab(self):
+        current_tab = self.tabview.get()
+        self.add_entry_to_tab(current_tab)
+
+    def remove_last_entry_from_active_tab(self):
+        current_tab = self.tabview.get()
+        entries = self.rename_entries[current_tab]["entries"]
+        if entries:
+            entry_pair = entries.pop()
+            entry_pair[0].master.destroy()
 
     def save_config(self):
         updated_config = {}
 
-        for tab_name, entries in self.rename_entries.items():
+        for tab_name, data in self.rename_entries.items():
             updated_tab = {}
-            for orig_entry, val_entry in entries.items():
+            for orig_entry, val_entry in data["entries"]:
                 key = orig_entry.get()
                 value = val_entry.get()
                 if key:
                     updated_tab[key] = self.parse_value(value)
             updated_config[tab_name] = updated_tab
 
-        with open("config_remake.json", "w", encoding="utf-8") as f:
+        with open("config.json", "w", encoding="utf-8") as f:
             json.dump(updated_config, f, ensure_ascii=False, indent=4)
 
-        ctk.CTkLabel(self.settings_window, text="Изменения сохранены!",
-                     text_color="green").pack(pady=5)
+        self.success_label.configure(text="Изменения сохранены!")
 
     def parse_value(self, value):
         try:
-            # Пробуем привести к числу или списку
             return json.loads(value)
         except:
             return value

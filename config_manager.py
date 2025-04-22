@@ -1,27 +1,19 @@
-# config_manager.py
-from pathlib import Path
 import json
-from typing import Dict, Any
-import shutil  # добавь к остальным импортам
+from pathlib import Path
+from typing import Any
 
 
 class AppConfig:
+    """
+    Класс для обработки конфигурационных данных из config.json.
+    """
+
+    # Предполагается, что config.json находится в корне проекта
+    ROOT = Path(__file__).parent
+
     def __init__(self):
-        self.ROOT = Path.cwd()
-        self.INPUT_FOLDER = self.ROOT / "Обрабатываемые"
-        self.PROCESSED_FOLDER = self.ROOT / "Обработанные"
-        self.LOG_FOLDER = self.ROOT / "log"
-        self._load_config()
-
-    def _load_config(self) -> None:
-        # Создаем config_remake.json, если его нет
-        remake_path = self.ROOT / "config_remake.json"
-        original_path = self.ROOT / "config.json"
-
-        if not remake_path.exists():
-            shutil.copy(original_path, remake_path)
-
-        with open(original_path, "r", encoding="utf-8") as f:
+        path = self.ROOT / "config.json"
+        with open(path, "r", encoding="utf-8") as f:
             config = json.load(f)
 
         self.RENAME_MAP: dict[str, str] = config["RENAME_MAP"]
@@ -47,14 +39,33 @@ class AppConfig:
 
     def read_raw(self) -> dict:
         """
-        Возвращает полный JSON-конфиг (из config_remake.json, если он есть, иначе config.json).
+        Возвращает полный JSON-конфиг (из config.json).
         """
-        path = self.ROOT / "config_remake.json"
-        if not path.exists():
-            path = self.ROOT / "config.json"
+        path = self.ROOT / "config.json"
 
         with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
+
+    def update_config(self, key: str, value: Any):
+        """
+        Обновляет значение конфигурации по ключу и сохраняет изменения в config.json.
+
+        Args:
+            key (str): Ключ для обновления значения.
+            value (Any): Новое значение для сохранения.
+        """
+        path = self.ROOT / "config.json"
+
+        with open(path, "r", encoding="utf-8") as f:
+            config = json.load(f)
+
+        config[key] = value
+
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(config, f, indent=4, ensure_ascii=False)
+
+        # Обновляем атрибуты объекта
+        setattr(self, key, value)
 
 
 # Глобальный инстанс конфига
