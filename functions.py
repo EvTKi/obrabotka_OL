@@ -10,9 +10,9 @@ from config_manager import config
 from typing import Dict
 
 # Использование pathlib для работы с путями
-input_folder = Path(config.INPUT_FOLDER)
-processed_folder = Path(config.PROCESSED_FOLDER)
-log_folder = Path(config.LOG_FOLDER)
+# input_folder = Path(config.INPUT_FOLDER)
+# processed_folder = Path(config.PROCESSED_FOLDER)
+# log_folder = Path(config.LOG_FOLDER)
 
 
 @lru_cache(maxsize=10)

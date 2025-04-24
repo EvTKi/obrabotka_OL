@@ -95,7 +95,7 @@ class AdminHelperApp(ctk.CTk):
 
         self.settings_window = ctk.CTkToplevel(self)
         self.settings_window.title("Настройки")
-        self.settings_window.geometry("750x520")
+        self.settings_window.geometry("750x540")
         self.settings_window.transient(self)
         self.settings_window.attributes("-topmost", True)
         self.settings_window.grab_set()
