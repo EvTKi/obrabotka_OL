@@ -37,7 +37,7 @@ def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-@log_decorator(level=logging.DEBUG)
+@log_decorator()
 def load_named_table(filepath: str, table_name: str) -> pd.DataFrame:
     """
     Загружает таблицу из Excel файла по имени.
@@ -65,7 +65,7 @@ def load_named_table(filepath: str, table_name: str) -> pd.DataFrame:
         raise RuntimeError(f"Ошибка загрузки: {e}")
 
 
-@log_decorator(level=logging.INFO)
+@log_decorator()
 def load_all_tables_from_file(filepath: str, verbose: bool = False) -> list[pd.DataFrame]:
     tables = []
     try:
@@ -92,7 +92,7 @@ def load_all_tables_from_file(filepath: str, verbose: bool = False) -> list[pd.D
             f"Ошибка при чтении всех таблиц из файла {filepath}: {e}")
 
 
-@log_decorator(level=logging.DEBUG)
+@log_decorator()
 def combine_dataframes(dfs, columns_to_remove, rename_map):
     combined = pd.concat(dfs, ignore_index=True)
     combined = combined.copy()
@@ -102,7 +102,7 @@ def combine_dataframes(dfs, columns_to_remove, rename_map):
     return combined
 
 
-@log_decorator(level=logging.INFO)
+@log_decorator()
 def save_dataframe_to_excel(df: pd.DataFrame, path: str, verbose=False) -> None:
     df.to_excel(path, index=False)
     msg = f"Результат сохранён: {path}"
@@ -111,7 +111,7 @@ def save_dataframe_to_excel(df: pd.DataFrame, path: str, verbose=False) -> None:
     logging.info(msg)
 
 
-@log_decorator(level=logging.DEBUG)
+@log_decorator()
 def smart_merge(df: pd.DataFrame, rename_map: dict[str, str]) -> pd.DataFrame:
     """
     Удаляет дубликаты по комбинации столбцов 'ФИО' и 'УЗ', сохраняет первое вхождение как оригинал,
@@ -153,7 +153,7 @@ def smart_merge(df: pd.DataFrame, rename_map: dict[str, str]) -> pd.DataFrame:
     return final_df
 
 
-@log_decorator(level=logging.INFO)
+@log_decorator()
 def apply_replacements(df, replace_dict):
     """
     Заменяет значения в DataFrame по указанному словарю замен.
